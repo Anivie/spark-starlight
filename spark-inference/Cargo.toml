@@ -1,0 +1,15 @@
+[package]
+name = "spark-inference"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ndarray = { version = "0.16.1", features = ["rayon", "matrixmultiply-threading"] }
+
+rayon = "1.10.0"
+anyhow = "1.0.86"
+image = "0.25.2"
+
+[dependencies.ort]
+git = "https://github.com/pykeio/ort.git"
+features = ["tensorrt", "load-dynamic", "ndarray"]

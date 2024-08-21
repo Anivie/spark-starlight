@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+	"spark-starlight",
+	"spark-inference",
+	"spark-ffmpeg",
+	"spark-media",
+]
