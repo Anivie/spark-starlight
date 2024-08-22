@@ -1,5 +1,5 @@
 use crate::avpacket::AVPacket;
-use crate::ffi::av_packet_alloc;
+use crate::ffi::{av_packet_alloc, av_packet_unref};
 use anyhow::{bail, Result};
 
 impl AVPacket {
@@ -13,5 +13,11 @@ impl AVPacket {
         }
 
         Ok(AVPacket { inner: packet })
+    }
+
+    pub fn release(&mut self) {
+        unsafe {
+            av_packet_unref(self.inner);
+        }
     }
 }

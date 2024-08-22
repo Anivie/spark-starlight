@@ -14,19 +14,21 @@ impl AVCodecContext {
             avcodec_alloc_context3(codec_ptr)
         };
 
-        if codec.is_some() {
-            native! {
-                avcodec_open2(
-                    ptr,
-                    codec_ptr,
-                    av_dictionary
-                        .map(|mut d| &mut (&mut d as *mut AVDictionary)as *mut *mut AVDictionary)
-                        .unwrap_or(null_mut()),
-                )
-            };
-        }
-
         Ok(AVCodecContext { inner: ptr, inner_frame: AVFrame::new()? })
+    }
+
+    pub fn open(&self, codec: &AVCodec, av_dictionary: Option<AVDictionary>) -> Result<()> {
+        native! {
+            avcodec_open2(
+                self.inner,
+                codec.inner.cast_const(),
+                av_dictionary
+                    .map(|mut x| &mut (&mut x as *mut AVDictionary)as *mut *mut AVDictionary)
+                    .unwrap_or(null_mut())
+            )
+        };
+
+        Ok(())
     }
 
     pub fn calculate_buffer_size(&self, format: AVPixelFormat) -> Result<i32> {

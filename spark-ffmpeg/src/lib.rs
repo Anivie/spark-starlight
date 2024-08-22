@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::mem::ManuallyDrop;
+
 #[macro_use]
 mod util;
 mod ffi;
@@ -12,7 +14,7 @@ pub mod sws;
 pub mod av_mem_alloc;
 pub mod avpacket;
 
-fn get_pixels() -> Vec<u8> {
+fn get_pixels() -> Vec<ManuallyDrop<Vec<u8>>> {
     use crate::av_mem_alloc::AVMemorySegment;
     use crate::avcodec::{AVCodec, AVCodecContext};
     use crate::avformat::avformat_context::OpenFileToAVFormatContext;
@@ -21,8 +23,10 @@ fn get_pixels() -> Vec<u8> {
     use crate::avframe::AVFrame;
     use crate::ffi::AVPixelFormat_AV_PIX_FMT_RGB24;
     use ffi::AVMediaType_AVMEDIA_TYPE_VIDEO;
+    use std::mem::forget;
 
-    let mut av_format_context = AVFormatContext::open_file("./data/a.png", None).unwrap();
+    // let mut av_format_context = AVFormatContext::open_file("/mnt/c/Users/anivi/OneDrive/Videos/Desktop/r.mp4", None).unwrap();
+    let mut av_format_context = AVFormatContext::open_file(".././data/image/a.png", None).unwrap();
     let stream = av_format_context.video_stream().unwrap();
     let mut codecs = stream
         .map(|(stream_index, av_stream)| {
@@ -33,6 +37,7 @@ fn get_pixels() -> Vec<u8> {
             let av_codec_context = unsafe {
                 let mut av_codec_context = AVCodecContext::new(Some(&codec), None).unwrap();
                 av_codec_context.apply_format(&*av_stream.codecpar).unwrap();
+                av_codec_context.open(&codec, None).unwrap();
                 av_codec_context
             };
 
@@ -57,9 +62,9 @@ fn get_pixels() -> Vec<u8> {
         ).unwrap();
         rgb_frame
     };
-    std::mem::forget(segment);
+    forget(segment);
 
-    let sws = SwsContext::from_format_context(&av_codec_context, None, None).unwrap();
+    let sws = SwsContext::from_format_context(&av_codec_context, Some(AVPixelFormat_AV_PIX_FMT_RGB24), None).unwrap();
     let mut vec = av_format_context
         .frames(AVMediaType_AVMEDIA_TYPE_VIDEO)
         .unwrap()
@@ -71,22 +76,26 @@ fn get_pixels() -> Vec<u8> {
 
             let base_addr = rgb_frame.data.get(0).unwrap();
             let line_size = *rgb_frame.linesize.get(0).unwrap();
-            let size = (av_codec_context.width * 3 + av_codec_context.height * line_size)as usize;
-            let vec: Vec<u8> = unsafe {
-                Vec::from_raw_parts(*base_addr, size + 10000, size + 10000)
+            let size = (av_codec_context.width * line_size)as usize;
+            println!("size: {}", size);
+            let vec = unsafe {
+                ManuallyDrop::new(Vec::<u8>::from_raw_parts(*base_addr, size, size))
             };
 
             vec
         })
         .collect::<Vec<_>>();
 
-    vec.remove(0)
+    vec
 }
 
 #[test]
 fn test_get_pixels() {
     let mut vec = get_pixels();
-    println!("{:?}", vec.len());
+    println!("len: {:?}", vec.len());
+    println!("{}", vec[0][0]);
+    println!("found: {} packet", vec.len());
     let i = vec.len();
-    vec[i - 1] = 0;
+    vec[i - 1][0] = 0;
+    println!("set: {}", vec[i - 1][0])
 }

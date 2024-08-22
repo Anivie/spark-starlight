@@ -3,18 +3,24 @@ mod entity;
 use image::imageops::FilterType;
 use image::{GenericImage, GenericImageView};
 use ndarray::{s, Array2, Array4, Axis, CowArray, Dim, Ix, Ix2, Ix3};
-use ort::{inputs, Session, TensorRTExecutionProvider};
+use ort::{inputs, CUDAExecutionProvider, Session, TensorRTExecutionProvider};
 use rayon::prelude::*;
 use std::cmp::Ordering;
 use entity::box_point::Box;
 
-const IMG_URL: &str = r#"D:\BaiduNetdiskDownload\dataset\UAS\rain_sight\test\RainSight144.jpg"#;
-const MODEL_URL: &str = r#"./model/best.onnx"#;
+const IMG_URL: &str = r#".././data/image/a.png"#;
+const MODEL_URL: &str = r#".././data/model/best.onnx"#;
+
+#[test]
+fn test() {
+    inference().unwrap();
+}
 
 pub fn inference() -> anyhow::Result<()> {
-    let tensorrt_provider = TensorRTExecutionProvider::default().build().error_on_failure();
+    // let provider = TensorRTExecutionProvider::default().build().error_on_failure();
+    let provider = CUDAExecutionProvider::default().build().error_on_failure();
     ort::init()
-        .with_execution_providers([tensorrt_provider])
+        .with_execution_providers([provider])
         .commit()?;
 
     let image = image::ImageReader::open(IMG_URL)?.decode()?;
