@@ -14,6 +14,7 @@ macro_rules! wrap {
             $(
                 use crate::ffi::$name as [<$name Raw>];
 
+                #[derive(Debug, Clone)]
                 pub struct $name <$($($life,)*)*> {
                     pub(crate) inner: *mut [<$name Raw>],
                     $(

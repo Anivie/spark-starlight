@@ -4,11 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ndarray = { version = "0.16.1", features = ["rayon", "matrixmultiply-threading"] }
+log = "0.4.22"
+cudarc = { version = "0.12.0", features = ["cuda-12050", "cudnn"] }
 
 rayon = "1.10.0"
 anyhow = "1.0.86"
 image = "0.25.2"
+
+spark-ffmpeg = { path = "../spark-ffmpeg" }
+
+[dependencies.ndarray]
+version = "0.16.1"
+features = ["rayon", "matrixmultiply-threading"]
 
 [dependencies.ort]
 git = "https://github.com/pykeio/ort.git"

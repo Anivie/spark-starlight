@@ -1,6 +1,15 @@
-#![allow(dead_code)]
+#![allow(warnings)]
 
+use std::fs::File;
+use std::io::Write;
 use std::mem::ManuallyDrop;
+use crate::ffi::{av_image_alloc, av_malloc};
+use image::{ColorType, DynamicImage, GenericImage, GenericImageView, Pixel, Rgba};
+use image::imageops::FilterType;
+use ndarray::Array4;
+use crate::avframe::AVFrame;
+use crate::pixel::frames::AVFrameCollector;
+use crate::sws::SwsContext;
 
 #[macro_use]
 mod util;
@@ -13,21 +22,18 @@ pub mod avframe;
 pub mod sws;
 pub mod av_mem_alloc;
 pub mod avpacket;
+pub mod pixel;
 
-fn get_pixels() -> Vec<ManuallyDrop<Vec<u8>>> {
+pub fn get_pixels() -> anyhow::Result<Vec<f32>> {
     use crate::av_mem_alloc::AVMemorySegment;
     use crate::avcodec::{AVCodec, AVCodecContext};
     use crate::avformat::avformat_context::OpenFileToAVFormatContext;
     use crate::avformat::AVFormatContext;
-    use crate::sws::SwsContext;
-    use crate::avframe::AVFrame;
-    use crate::ffi::AVPixelFormat_AV_PIX_FMT_RGB24;
-    use ffi::AVMediaType_AVMEDIA_TYPE_VIDEO;
-    use std::mem::forget;
+    use crate::ffi::{ AVPixelFormat_AV_PIX_FMT_RGB24, AVMediaType_AVMEDIA_TYPE_VIDEO };
 
-    // let mut av_format_context = AVFormatContext::open_file("/mnt/c/Users/anivi/OneDrive/Videos/Desktop/r.mp4", None).unwrap();
-    let mut av_format_context = AVFormatContext::open_file(".././data/image/a.png", None).unwrap();
-    let stream = av_format_context.video_stream().unwrap();
+    // let mut av_format_context = AVFormatContext::open_file("/mnt/c/Users/anivi/OneDrive/Videos/Desktop/r.mp4", None)?;
+    let mut av_format_context = AVFormatContext::open_file("/home/spark-starlight/data/image/c.jpg", None)?;
+    let stream = av_format_context.video_stream()?;
     let mut codecs = stream
         .map(|(stream_index, av_stream)| {
             let codec = unsafe {
@@ -46,56 +52,66 @@ fn get_pixels() -> Vec<ManuallyDrop<Vec<u8>>> {
                 let segment = AVMemorySegment::new(size as usize).unwrap();
                 segment
             };
-            (codec, av_codec_context, segment, stream_index)
+            av_codec_context
         })
         .collect::<Vec<_>>();
-    let (codec, av_codec_context, segment, stream_index) = codecs.remove(0);
-    println!("segment: {:?}", segment.size);
+    let av_codec_context = codecs.remove(0);
 
-    let rgb_frame = {
-        let mut rgb_frame = AVFrame::new().unwrap();
-        rgb_frame.fill_arrays(
-            segment.inner.cast::<u8>(),
-            AVPixelFormat_AV_PIX_FMT_RGB24,
-            av_codec_context.width,
-            av_codec_context.height,
-        ).unwrap();
-        rgb_frame
-    };
-    forget(segment);
-
-    let sws = SwsContext::from_format_context(&av_codec_context, Some(AVPixelFormat_AV_PIX_FMT_RGB24), None).unwrap();
     let mut vec = av_format_context
         .frames(AVMediaType_AVMEDIA_TYPE_VIDEO)
-        .unwrap()
+        ?
         .map(|mut packet| {
             av_codec_context.send_packet(&mut packet).unwrap();
-            let frame = av_codec_context.receive_frame().unwrap();
-
-            sws.scale_image(&av_codec_context, frame, &rgb_frame).unwrap();
-
-            let base_addr = rgb_frame.data.get(0).unwrap();
-            let line_size = *rgb_frame.linesize.get(0).unwrap();
-            let size = (av_codec_context.width * line_size)as usize;
-            println!("size: {}", size);
-            let vec = unsafe {
-                ManuallyDrop::new(Vec::<u8>::from_raw_parts(*base_addr, size, size))
-            };
-
-            vec
+            av_codec_context.receive_frame().unwrap()
         })
         .collect::<Vec<_>>();
 
-    vec
+    let sws = SwsContext::from_format_context(&av_codec_context, Some(AVPixelFormat_AV_PIX_FMT_RGB24), Some((640, 640)), None)?;
+    let scaled_frame = {
+        let mut scaled_frame = AVFrame::new()?;
+        scaled_frame.width = 640;
+        scaled_frame.height = 640;
+        scaled_frame.alloc_image(AVPixelFormat_AV_PIX_FMT_RGB24, 640, 640)?;
+        scaled_frame
+    };
+    sws.scale_image(&vec[0], &scaled_frame)?;
+
+    let data = unsafe {
+        let size = (scaled_frame.height * scaled_frame.linesize[0]) as usize;
+        ManuallyDrop::new(Vec::from_raw_parts(scaled_frame.data[0], size, size))
+    };
+    let mut r: Vec<f32> = data.iter()
+        .enumerate()
+        .filter(|(index, _)| *index % 3 == 0)
+        .map(|(_, x)| *x as f32 / 255.)
+        .collect();
+    let g: Vec<f32> = data.iter()
+        .enumerate()
+        .filter(|(index, _)| (*index + 2) % 3 == 0)
+        .map(|(_, x)| *x as f32 / 255.)
+        .collect();
+    let b: Vec<f32> = data.iter()
+        .enumerate()
+        .filter(|(index, _)| (*index + 1) % 3 == 0)
+        .map(|(_, x)| *x as f32 / 255.)
+        .collect();
+    r.extend_from_slice(&g);
+    r.extend_from_slice(&b);
+
+    Ok(r)
 }
 
 #[test]
-fn test_get_pixels() {
-    let mut vec = get_pixels();
-    println!("len: {:?}", vec.len());
-    println!("{}", vec[0][0]);
-    println!("found: {} packet", vec.len());
-    let i = vec.len();
-    vec[i - 1][0] = 0;
-    println!("set: {}", vec[i - 1][0])
+fn test_array_filter() {
+    //                 R  G  B  R  G  B  R  G  B
+    let data = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    data.iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            (index + 2) % 3 == 0
+        })
+        .map(|(index, x)| *x as f32)
+        .for_each(|x| {
+            println!("{}", x);
+        });
 }

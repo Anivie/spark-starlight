@@ -3,6 +3,7 @@ use std::ops::Deref;
 use anyhow::{bail, Result};
 use crate::ffi::{av_free, av_malloc};
 
+#[derive(Debug, Clone)]
 pub struct AVMemorySegment {
     pub inner: *mut c_void,
     pub size: usize,

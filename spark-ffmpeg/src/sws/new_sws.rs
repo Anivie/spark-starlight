@@ -8,14 +8,14 @@ use crate::avformat::AVFormatContext;
 use crate::avframe::AVFrame;
 
 impl SwsContext {
-    pub fn from_format_context(codec_context: &AVCodecContext, dst_format: Option<AVPixelFormat>, flags: Option<u32>) -> Result<Self> {
+    pub fn from_format_context(codec_context: &AVCodecContext, dst_format: Option<AVPixelFormat>, dst_size: Option<(i32, i32)>, flags: Option<u32>) -> Result<Self> {
         let sws = unsafe {
             sws_getContext(
                 codec_context.width,
                 codec_context.height,
                 codec_context.pix_fmt,
-                codec_context.width,
-                codec_context.height,
+                dst_size.map(|(x, y)| x).unwrap_or(codec_context.width),
+                dst_size.map(|(x, y)| y).unwrap_or(codec_context.height),
                 dst_format.unwrap_or(codec_context.pix_fmt),
                 flags.map(|x| x as i32).unwrap_or(SWS_BILINEAR as i32),
                 null_mut(),
@@ -33,7 +33,6 @@ impl SwsContext {
 
     pub fn scale_image(
         &self,
-        avcodec_context: &AVCodecContext,
         src: &AVFrame,
         dst: &AVFrame
     ) -> Result<i32> {
@@ -43,7 +42,7 @@ impl SwsContext {
                 src.data.as_ptr() as *const *const u8,
                 src.linesize.as_ptr(),
                 0,
-                avcodec_context.height,
+                src.height,
                 dst.data.as_ptr(),
                 dst.linesize.as_ptr(),
             )
@@ -65,6 +64,6 @@ fn test_sws_context() {
             av_codec_context.apply_format(&*x.codecpar).unwrap();
             av_codec_context
         };
-        let _ = SwsContext::from_format_context(&av_codec_context, None, None).unwrap();
+        let _ = SwsContext::from_format_context(&av_codec_context, None, None, None).unwrap();
     });
 }

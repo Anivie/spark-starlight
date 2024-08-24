@@ -1,15 +1,16 @@
 mod entity;
 
 use image::imageops::FilterType;
-use image::{GenericImage, GenericImageView};
-use ndarray::{s, Array2, Array4, Axis, CowArray, Dim, Ix, Ix2, Ix3};
-use ort::{inputs, CUDAExecutionProvider, Session, TensorRTExecutionProvider};
+use image::{DynamicImage, GenericImage, GenericImageView};
+use ndarray::{s, Array, Array2, Array4, Axis, CowArray, Dim, Ix, Ix2, Ix3};
+use ort::{inputs, AllocationDevice, AllocatorType, CUDAExecutionProvider, MemoryInfo, MemoryType, Session, TensorRTExecutionProvider, TensorRefMut};
 use rayon::prelude::*;
 use std::cmp::Ordering;
+use cudarc::driver::{CudaDevice, DevicePtr};
 use entity::box_point::Box;
 
-const IMG_URL: &str = r#".././data/image/a.png"#;
-const MODEL_URL: &str = r#".././data/model/best.onnx"#;
+const IMG_URL: &str = r#"./data/image/c.jpg"#;
+const MODEL_URL: &str = r#"./data/model/best.onnx"#;
 
 #[test]
 fn test() {
@@ -22,27 +23,20 @@ pub fn inference() -> anyhow::Result<()> {
     ort::init()
         .with_execution_providers([provider])
         .commit()?;
-
-    let image = image::ImageReader::open(IMG_URL)?.decode()?;
-    // let (image_width, image_height) = image.dimensions();
-    let mut image = image.resize_exact(640, 640, FilterType::Lanczos3);
-
     let model = Session::builder()?.commit_from_file(MODEL_URL)?;
 
-    let input = {
-        let mut input = Array4::zeros((1, 3, 640, 640));
-        for pixel in image.pixels() {
-            let x = pixel.0 as _;
-            let y = pixel.1 as _;
-            let [r, g, b, _] = pixel.2.0;
-            input[[0, 0, y, x]] = (r as f32) / 255.;
-            input[[0, 1, y, x]] = (g as f32) / 255.;
-            input[[0, 2, y, x]] = (b as f32) / 255.;
-        }
-        input
-    };
+    let mut input = spark_ffmpeg::get_pixels()?;
 
-    let outputs = model.run(inputs!["images" => input.view()]?)?;
+    let device = CudaDevice::new(0)?;
+    let device_data = device.htod_sync_copy(input.as_slice())?;
+    let tensor: TensorRefMut<'_, f32> = unsafe {
+        TensorRefMut::from_raw(
+            MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
+            (*device_data.device_ptr() as usize as *mut ()).cast(),
+            vec![1, 3, 640, 640]
+        )?
+    };
+    let outputs = model.run([tensor.into()])?;
 
     let output_first = outputs["output0"].try_extract_tensor::<f32>()?.t().into_owned();
     let output_first = output_first.squeeze().into_dimensionality::<Ix2>()?;
@@ -106,6 +100,7 @@ pub fn inference() -> anyhow::Result<()> {
         })
         .collect::<Vec<_>>();
 
+    let mut image = DynamicImage::new_rgb8(640, 640);
     println!("image size: {:?}", image.dimensions());
     for (i, (boxed, mask, score)) in mask.iter().enumerate() {
         mask
@@ -133,7 +128,7 @@ pub fn inference() -> anyhow::Result<()> {
                     );
                 }
             });
-        image.save(format!("./mask/mask_{}_iou_{}.png", i, score))?;
+        image.save(format!("./data/out/mask_{}_iou_{}.png", i, score))?;
     }
 
     Ok(())
