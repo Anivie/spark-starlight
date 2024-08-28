@@ -1,11 +1,10 @@
+use crate::image_util::extract::ExtraToTensor;
+use crate::Image;
 use anyhow::Result;
-use log::debug;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avpacket::AVPacket;
 use spark_ffmpeg::avstream::AVCodecID;
 use spark_ffmpeg::pixformat::AVPixelFormat;
-use crate::{Image, CODEC};
-use crate::image_util::extract::ExtraToTensor;
 
 impl Image {
     pub fn from_data(size: (i32, i32), pixel_format: AVPixelFormat, codec_id: AVCodecID) -> Result<Self> {

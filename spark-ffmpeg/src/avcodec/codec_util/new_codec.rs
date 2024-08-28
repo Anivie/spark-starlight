@@ -1,9 +1,9 @@
-use std::ops::Deref;
 use crate::avcodec::{AVCodec, AVCodecContext};
-use anyhow::Result;
-use crate::ffi::{AVRational};
-use rayon::prelude::*;
+use crate::ffi::AVRational;
 use crate::pixformat::AVPixelFormat;
+use anyhow::Result;
+use rayon::prelude::*;
+use std::ops::Deref;
 
 struct SafeVecPtr(*mut u8);
 impl Deref for SafeVecPtr {

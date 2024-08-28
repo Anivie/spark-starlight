@@ -1,9 +1,9 @@
-use anyhow::Result;
-use std::ffi::CString;
-use std::ptr::{null, null_mut};
 use crate::avformat::{AVFormatContext, AVFormatContextRaw, AVMediaType};
 use crate::avpacket::AVPacket;
 use crate::ffi::{av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat, AVMediaType_AVMEDIA_TYPE_VIDEO};
+use anyhow::Result;
+use std::ffi::CString;
+use std::ptr::{null, null_mut};
 
 pub trait OpenFileToAVFormatContext {
     fn open_file(path: impl Into<String>, format: Option<&AVInputFormat>) -> Result<Self>

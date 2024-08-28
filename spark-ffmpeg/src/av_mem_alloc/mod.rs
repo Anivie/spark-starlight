@@ -1,7 +1,7 @@
+use crate::ffi::{av_free, av_malloc};
+use anyhow::{bail, Result};
 use std::ffi::c_void;
 use std::ops::Deref;
-use anyhow::{bail, Result};
-use crate::ffi::{av_free, av_malloc};
 
 #[derive(Debug, Clone)]
 pub struct AVMemorySegment {

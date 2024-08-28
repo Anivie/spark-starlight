@@ -1,8 +1,8 @@
-use std::ptr::null_mut;
-use anyhow::anyhow;
 use crate::avformat::{AVFormatContext, AVMediaType};
 use crate::avframe::AVFrame;
 use crate::ffi::{avformat_find_stream_info, AVDictionary, AVMediaType_AVMEDIA_TYPE_AUDIO, AVMediaType_AVMEDIA_TYPE_VIDEO, AVStream};
+use anyhow::anyhow;
+use std::ptr::null_mut;
 
 pub struct AVFormatContextStream<'a> {
     pub(super) context: &'a AVFormatContext,

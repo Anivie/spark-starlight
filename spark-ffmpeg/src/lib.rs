@@ -1,14 +1,14 @@
 #![feature(new_uninit)]
 #![allow(warnings)]
 
+use crate::avformat::AVMediaType;
 use crate::avframe::AVFrame;
+use crate::pixformat::AVPixelFormat;
 use crate::sws::SwsContext;
 use anyhow::Result;
 use image::{GenericImage, GenericImageView, Pixel};
 use std::io::Write;
 use std::mem::ManuallyDrop;
-use crate::avformat::AVMediaType;
-use crate::pixformat::AVPixelFormat;
 
 #[macro_use]
 mod util;
@@ -26,12 +26,9 @@ pub mod avstream;
 pub mod pixformat;
 
 pub fn get_pixels() -> Result<Vec<f32>> {
-    use crate::av_mem_alloc::AVMemorySegment;
     use crate::avcodec::{AVCodec, AVCodecContext};
     use crate::avformat::avformat_context::OpenFileToAVFormatContext;
     use crate::avformat::AVFormatContext;
-    use crate::ffi::{AVMediaType_AVMEDIA_TYPE_VIDEO, AVPixelFormat_AV_PIX_FMT_RGB24};
-
     // let mut av_format_context = AVFormatContext::open_file("/mnt/c/Users/anivi/OneDrive/Videos/Desktop/r.mp4", None)?;
     let mut av_format_context = AVFormatContext::open_file("/home/spark-starlight/data/image/b.png", None)?;
     let stream = av_format_context.video_stream()?;

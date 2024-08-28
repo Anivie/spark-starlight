@@ -1,13 +1,8 @@
-use std::fmt::format;
-use std::intrinsics::wrapping_add;
-use std::ops::Deref;
-use std::path::Path;
-use std::sync::LazyLock;
-use tokio::fs::File;
+use crate::{Image, CODEC};
 use anyhow::{anyhow, bail, Result};
 use hashbrown::HashMap;
-use parking_lot::{Mutex, RwLock};
 use log::warn;
+use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avformat::avformat_context::OpenFileToAVFormatContext;
@@ -16,7 +11,12 @@ use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::avstream::AVCodecID;
 use spark_ffmpeg::pixformat::AVPixelFormat;
 use spark_ffmpeg::sws::SwsContext;
-use crate::{Image, CODEC};
+use std::fmt::format;
+use std::intrinsics::wrapping_add;
+use std::ops::Deref;
+use std::path::Path;
+use std::sync::LazyLock;
+use tokio::fs::File;
 
 impl Image {
     pub fn open(path: impl Into<String>) -> Result<Self> {

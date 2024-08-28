@@ -1,7 +1,7 @@
-use std::ops::Deref;
-use spark_ffmpeg::avframe::AVFrame;
 use anyhow::Result;
 use rayon::prelude::*;
+use spark_ffmpeg::avframe::AVFrame;
+use std::ops::Deref;
 
 struct SafeVecPtr(*mut f32);
 impl Deref for SafeVecPtr {

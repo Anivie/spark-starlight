@@ -1,5 +1,5 @@
-use std::ffi::c_int;
 use anyhow::anyhow;
+use std::ffi::c_int;
 
 #[allow(dead_code)]
 pub(crate) trait ToError {

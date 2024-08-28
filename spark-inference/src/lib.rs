@@ -2,15 +2,15 @@ mod entity;
 
 use cudarc::driver::{CudaDevice, DevicePtr};
 use entity::box_point::Box;
+use image::imageops::resize;
 use image::{DynamicImage, GenericImage, GenericImageView};
+use log::debug;
 use ndarray::{s, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
 use ort::{AllocationDevice, AllocatorType, CUDAExecutionProvider, MemoryInfo, MemoryType, Session, TensorRefMut};
 use rayon::prelude::*;
-use std::cmp::Ordering;
-use image::imageops::resize;
-use log::debug;
-use spark_media::Image;
 use spark_media::image_util::extract::ExtraToTensor;
+use spark_media::Image;
+use std::cmp::Ordering;
 
 const IMG_URL: &str = r#"./data/image/c.jpg"#;
 const MODEL_URL: &str = r#"./data/model/best.onnx"#;

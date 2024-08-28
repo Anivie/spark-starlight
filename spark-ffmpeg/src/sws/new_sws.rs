@@ -1,12 +1,12 @@
 use crate::avcodec::{AVCodec, AVCodecContext};
-use crate::ffi::{sws_getContext, sws_scale, SWS_BILINEAR};
-use crate::sws::SwsContext;
-use anyhow::{bail, Result};
-use std::ptr::null_mut;
 use crate::avformat::avformat_context::OpenFileToAVFormatContext;
 use crate::avformat::AVFormatContext;
 use crate::avframe::AVFrame;
+use crate::ffi::{sws_getContext, sws_scale, SWS_BILINEAR};
 use crate::pixformat::AVPixelFormat;
+use crate::sws::SwsContext;
+use anyhow::{bail, Result};
+use std::ptr::null_mut;
 
 impl SwsContext {
     pub fn from_format_context(codec_context: &AVCodecContext, dst_format: Option<AVPixelFormat>, dst_size: Option<(i32, i32)>, flags: Option<u32>) -> Result<Self> {
