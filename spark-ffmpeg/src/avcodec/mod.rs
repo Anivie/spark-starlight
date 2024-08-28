@@ -1,7 +1,7 @@
 use crate::avframe::AVFrame;
 
-mod open_codec;
-mod codec_context;
+pub mod codec_alloc;
+mod codec_util;
 
 wrap!(
     AVCodecContext {
@@ -9,3 +9,6 @@ wrap!(
     } drop2 avcodec_free_context,
     AVCodec
 );
+
+unsafe impl Send for AVCodec {}
+unsafe impl Sync for AVCodec {}

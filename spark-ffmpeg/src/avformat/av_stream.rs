@@ -1,7 +1,8 @@
 use std::ptr::null_mut;
 use anyhow::anyhow;
-use crate::avformat::AVFormatContext;
-use crate::ffi::{avformat_find_stream_info, AVDictionary, AVMediaType, AVMediaType_AVMEDIA_TYPE_AUDIO, AVMediaType_AVMEDIA_TYPE_VIDEO, AVStream};
+use crate::avformat::{AVFormatContext, AVMediaType};
+use crate::avframe::AVFrame;
+use crate::ffi::{avformat_find_stream_info, AVDictionary, AVMediaType_AVMEDIA_TYPE_AUDIO, AVMediaType_AVMEDIA_TYPE_VIDEO, AVStream};
 
 pub struct AVFormatContextStream<'a> {
     pub(super) context: &'a AVFormatContext,
@@ -43,7 +44,7 @@ impl AVFormatContext {
             .into_iter()
             .filter(|x| {
                 unsafe {
-                    (*(**self.streams.offset(*x as isize)).codecpar).codec_type == target_type
+                    (*(**self.streams.offset(*x as isize)).codecpar).codec_type == target_type as i32
                 }
             })
             .collect::<Vec<_>>();
@@ -52,7 +53,7 @@ impl AVFormatContext {
             self.scanned_stream.insert(target_type, first_match_stream.clone());
             Ok(first_match_stream)
         }else {
-            Err(anyhow!("No target stream {} found", target_type))
+            Err(anyhow!("No target stream {:?} found", target_type))
         }
     }
 
@@ -69,10 +70,10 @@ impl AVFormatContext {
     }
 
     pub fn video_stream(&mut self) -> anyhow::Result<AVFormatContextStream> {
-        Ok(self.stream(AVMediaType_AVMEDIA_TYPE_VIDEO)?)
+        Ok(self.stream(AVMediaType::VIDEO)?)
     }
 
     pub fn audio_stream(&mut self) -> anyhow::Result<AVFormatContextStream> {
-        Ok(self.stream(AVMediaType_AVMEDIA_TYPE_AUDIO)?)
+        Ok(self.stream(AVMediaType::AUDIO)?)
     }
 }

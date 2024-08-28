@@ -1,20 +1,17 @@
-use std::ffi::c_void;
-use crate::ffi::av_freep;
+use std::mem::ManuallyDrop;
 
-mod open_frame;
-
-#[derive(Debug, Clone)]
-struct MarkAlloc(*mut c_void);
-impl Drop for MarkAlloc {
-    fn drop(&mut self) {
-      unsafe {
-        av_freep(self.0);
-      }
-    }
-}
+pub mod open_frame;
+pub mod frame_info;
 
 wrap!(
-  AVFrame {
-    is_alloc_image: Option<MarkAlloc>,
-  } drop2 av_frame_free
+  AVFrame drop2 av_frame_free
 );
+
+impl AVFrame {
+  pub fn get_data(&self, index: usize) -> ManuallyDrop<Vec<u8>> {
+    let size = self.linesize[index] * self.height;
+    unsafe {
+      ManuallyDrop::new(Vec::from_raw_parts(self.data[index], size as usize, size as usize))
+    }
+  }
+}

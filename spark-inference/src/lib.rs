@@ -1,19 +1,22 @@
 mod entity;
 
-use image::imageops::FilterType;
-use image::{DynamicImage, GenericImage, GenericImageView};
-use ndarray::{s, Array, Array2, Array4, Axis, CowArray, Dim, Ix, Ix2, Ix3};
-use ort::{inputs, AllocationDevice, AllocatorType, CUDAExecutionProvider, MemoryInfo, MemoryType, Session, TensorRTExecutionProvider, TensorRefMut};
-use rayon::prelude::*;
-use std::cmp::Ordering;
 use cudarc::driver::{CudaDevice, DevicePtr};
 use entity::box_point::Box;
+use image::{DynamicImage, GenericImage, GenericImageView};
+use ndarray::{s, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
+use ort::{AllocationDevice, AllocatorType, CUDAExecutionProvider, MemoryInfo, MemoryType, Session, TensorRefMut};
+use rayon::prelude::*;
+use std::cmp::Ordering;
+use image::imageops::resize;
+use log::debug;
+use spark_media::Image;
+use spark_media::image_util::extract::ExtraToTensor;
 
 const IMG_URL: &str = r#"./data/image/c.jpg"#;
 const MODEL_URL: &str = r#"./data/model/best.onnx"#;
 
 #[test]
-fn test() {
+fn test_inference() {
     inference().unwrap();
 }
 
@@ -25,18 +28,32 @@ pub fn inference() -> anyhow::Result<()> {
         .commit()?;
     let model = Session::builder()?.commit_from_file(MODEL_URL)?;
 
-    let mut input = spark_ffmpeg::get_pixels()?;
+    debug!("Start reading image");
+    let mut input = Image::open("/home/spark-starlight/data/image/b.png")?;
+    debug!("Finish reading image");
+    input.decode()?;
+    debug!("Finish decode image");
+    let frame = input.resize((640, 640))?;
+    let tensor = frame.extra_standard_image_to_tensor()?;
+    debug!("Finish converting image to tensor");
 
-    let device = CudaDevice::new(0)?;
-    let device_data = device.htod_sync_copy(input.as_slice())?;
-    let tensor: TensorRefMut<'_, f32> = unsafe {
-        TensorRefMut::from_raw(
-            MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
-            (*device_data.device_ptr() as usize as *mut ()).cast(),
-            vec![1, 3, 640, 640]
-        )?
+    let tensor = {
+        let device = CudaDevice::new(0)?;
+        let device_data = device.htod_sync_copy(tensor.as_slice())?;
+        let tensor: TensorRefMut<'_, f32> = unsafe {
+            TensorRefMut::from_raw(
+                MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
+                (*device_data.device_ptr() as usize as *mut ()).cast(),
+                vec![1, 3, 640, 640],
+            )?
+        };
+        tensor
     };
-    let outputs = model.run([tensor.into()])?;
+
+    debug!("Finish copying tensor to device");
+    let outputs = [tensor.into()];
+    let outputs = model.run(outputs)?;
+    debug!("Finish running model");
 
     let output_first = outputs["output0"].try_extract_tensor::<f32>()?.t().into_owned();
     let output_first = output_first.squeeze().into_dimensionality::<Ix2>()?;
@@ -45,8 +62,8 @@ pub fn inference() -> anyhow::Result<()> {
     let output_second = output_second.squeeze().into_dimensionality::<Ix3>()?;
     let output_second = output_second.to_shape((32, 25600))?;
 
-    // println!("output_first: {:?}", output_first.shape());
-    // println!("output_second: {:?}", output_second.shape());
+    debug!("output_first: {:?}", output_first.shape());
+    debug!("output_second: {:?}", output_second.shape());
 
     let mask = output_first
         .axis_iter(Axis(0))
@@ -101,7 +118,7 @@ pub fn inference() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
     let mut image = DynamicImage::new_rgb8(640, 640);
-    println!("image size: {:?}", image.dimensions());
+    debug!("image size: {:?}", image.dimensions());
     for (i, (boxed, mask, score)) in mask.iter().enumerate() {
         mask
             .indexed_iter()

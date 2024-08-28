@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
-use crate::avformat::AVFormatContext;
+use crate::avformat::{AVFormatContext, AVMediaType};
 use crate::avpacket::AVPacket;
-use crate::ffi::AVMediaType;
 
 pub struct AVFormatContextFrames<'a> {
     pub(super) context: &'a AVFormatContext,
@@ -30,7 +29,7 @@ impl AVFormatContext {
         let vec = self
             .scanned_stream
             .get(&target_type)
-            .ok_or(anyhow!("No target stream {} found", target_type))?;
+            .ok_or(anyhow!("No target stream {:?} found", target_type))?;
 
         let packet = AVFormatContextFrames {
             context: self,

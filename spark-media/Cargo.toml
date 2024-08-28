@@ -5,3 +5,11 @@ edition = "2021"
 
 [dependencies]
 spark-ffmpeg = { path = "../spark-ffmpeg" }
+
+anyhow = "1.0.86"
+log = "0.4.22"
+
+parking_lot = { version = "0.12.3", features = ["nightly"] }
+hashbrown = { version = "0.14.5", features = ["nightly"] }
+tokio = { version = "1.39.3", features = ["full"] }
+rayon = "1.10.0"

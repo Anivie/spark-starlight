@@ -1,11 +1,12 @@
 use crate::avcodec::{AVCodec, AVCodecContext};
-use crate::ffi::{sws_getContext, sws_scale, AVPixelFormat, SWS_BILINEAR};
+use crate::ffi::{sws_getContext, sws_scale, SWS_BILINEAR};
 use crate::sws::SwsContext;
 use anyhow::{bail, Result};
 use std::ptr::null_mut;
 use crate::avformat::avformat_context::OpenFileToAVFormatContext;
 use crate::avformat::AVFormatContext;
 use crate::avframe::AVFrame;
+use crate::pixformat::AVPixelFormat;
 
 impl SwsContext {
     pub fn from_format_context(codec_context: &AVCodecContext, dst_format: Option<AVPixelFormat>, dst_size: Option<(i32, i32)>, flags: Option<u32>) -> Result<Self> {
@@ -16,7 +17,7 @@ impl SwsContext {
                 codec_context.pix_fmt,
                 dst_size.map(|(x, y)| x).unwrap_or(codec_context.width),
                 dst_size.map(|(x, y)| y).unwrap_or(codec_context.height),
-                dst_format.unwrap_or(codec_context.pix_fmt),
+                dst_format.map(|x| x as i32).unwrap_or(codec_context.pix_fmt),
                 flags.map(|x| x as i32).unwrap_or(SWS_BILINEAR as i32),
                 null_mut(),
                 null_mut(),
@@ -56,14 +57,8 @@ impl SwsContext {
 fn test_sws_context() {
     let mut av_format_context = AVFormatContext::open_file("./data/a.png", None).unwrap();
     av_format_context.video_stream().unwrap().for_each(|(_, x)| {
-        let codec = unsafe {
-            AVCodec::open_codec((*x.codecpar).codec_id).unwrap()
-        };
-        let av_codec_context = unsafe {
-            let mut av_codec_context = AVCodecContext::new(Some(&codec), None).unwrap();
-            av_codec_context.apply_format(&*x.codecpar).unwrap();
-            av_codec_context
-        };
+        let codec = AVCodec::new_decoder(x).unwrap();
+        let av_codec_context = AVCodecContext::new(&codec, x, None).unwrap();
         let _ = SwsContext::from_format_context(&av_codec_context, None, None, None).unwrap();
     });
 }

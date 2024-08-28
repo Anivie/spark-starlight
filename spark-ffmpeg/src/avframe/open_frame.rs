@@ -1,7 +1,8 @@
 use std::ffi::c_void;
-use crate::avframe::{AVFrame, MarkAlloc};
-use crate::ffi::{av_frame_alloc, av_image_alloc, av_image_fill_arrays, AVPixelFormat};
+use crate::avframe::AVFrame;
+use crate::ffi::{av_frame_alloc, av_image_alloc, av_image_fill_arrays};
 use anyhow::{anyhow, Result};
+use crate::pixformat::AVPixelFormat;
 
 impl AVFrame {
     pub fn new() -> Result<Self> {
@@ -12,8 +13,13 @@ impl AVFrame {
         if frame.is_null() {
             Err(anyhow!("Failed to allocate frame"))
         } else {
-            Ok(AVFrame { inner: frame, is_alloc_image: None })
+            Ok(AVFrame { inner: frame })
         }
+    }
+
+    pub fn set_size(&mut self, width: i32, height: i32) {
+        self.width = width;
+        self.height = height;
     }
 
     pub fn alloc_image(&mut self, format: AVPixelFormat, width: i32, height: i32) -> Result<i32> {
@@ -23,14 +29,10 @@ impl AVFrame {
                 self.linesize.as_ptr().cast_mut(),
                 width,
                 height,
-                format,
+                format as i32,
                 1
             )
         };
-
-        // self.is_alloc_image = unsafe {
-        //     Some(MarkAlloc(*self.data.as_ptr().cast::<*mut c_void>()))
-        // };
 
         Ok(need_size)
     }
@@ -41,7 +43,7 @@ impl AVFrame {
                 self.data.as_ptr().cast_mut(),
                 self.linesize.as_ptr().cast_mut(),
                 data,
-                format,
+                format as i32,
                 size.0,
                 size.1,
                 1

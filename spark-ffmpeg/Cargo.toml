@@ -9,6 +9,8 @@ bindgen = "0.70.1"
 [dependencies]
 anyhow = "1.0.86"
 paste = "1.0.15"
+num_enum = "0.7.3"
+rayon = "1.10.0"
 
 image = "0.25.2"
 ndarray = "0.16.1"

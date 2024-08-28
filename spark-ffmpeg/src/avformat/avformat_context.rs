@@ -1,12 +1,12 @@
 use anyhow::Result;
 use std::ffi::CString;
 use std::ptr::{null, null_mut};
-use crate::avformat::{AVFormatContext, AVFormatContextRaw};
+use crate::avformat::{AVFormatContext, AVFormatContextRaw, AVMediaType};
 use crate::avpacket::AVPacket;
 use crate::ffi::{av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat, AVMediaType_AVMEDIA_TYPE_VIDEO};
 
 pub trait OpenFileToAVFormatContext {
-    fn open_file(path: &str, format: Option<&AVInputFormat>) -> Result<Self>
+    fn open_file(path: impl Into<String>, format: Option<&AVInputFormat>) -> Result<Self>
     where
         Self: Sized;
     fn open_file_arg<'a>(path: &str, format: Option<&AVInputFormat>, dictionary: &'a mut AVDictionary) -> Result<(Self, &'a AVDictionary)>
@@ -15,11 +15,11 @@ pub trait OpenFileToAVFormatContext {
 }
 
 impl OpenFileToAVFormatContext for AVFormatContext {
-    fn open_file(path: &str, format: Option<&AVInputFormat>) -> Result<Self> {
+    fn open_file(path: impl Into<String>, format: Option<&AVInputFormat>) -> Result<Self> {
         let mut av_format_context = unsafe {
             avformat_alloc_context()
         };
-        let path = CString::new(path)?;
+        let path = CString::new(path.into().as_str())?;
 
         ffmpeg! {
             avformat_open_input(
@@ -88,7 +88,7 @@ fn test_video_stream() {
 #[test]
 fn test_format() {
     let mut a = AVFormatContext::open_file("./data/a.png", None).unwrap();
-    a.find_stream(AVMediaType_AVMEDIA_TYPE_VIDEO).and_then(|x| {
+    a.find_stream(AVMediaType::VIDEO).and_then(|x| {
         println!("{:?}", x);
         Ok(())
     }).unwrap();

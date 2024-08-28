@@ -12,6 +12,7 @@ anyhow = "1.0.86"
 image = "0.25.2"
 
 spark-ffmpeg = { path = "../spark-ffmpeg" }
+spark-media = { path = "../spark-media" }
 
 [dependencies.ndarray]
 version = "0.16.1"
