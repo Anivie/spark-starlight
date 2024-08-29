@@ -1,5 +1,3 @@
-#![feature(core_intrinsics)]
-
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};

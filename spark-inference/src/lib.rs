@@ -2,18 +2,32 @@ mod entity;
 
 use cudarc::driver::{CudaDevice, DevicePtr};
 use entity::box_point::Box;
-use image::imageops::resize;
-use image::{DynamicImage, GenericImage, GenericImageView};
 use log::debug;
 use ndarray::{s, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
-use ort::{AllocationDevice, AllocatorType, CUDAExecutionProvider, MemoryInfo, MemoryType, Session, TensorRefMut};
+use ort::{AllocationDevice, AllocatorType, CUDAExecutionProvider, MemoryInfo, MemoryType, Session, TensorRTExecutionProvider, TensorRefMut};
 use rayon::prelude::*;
 use spark_media::image_util::extract::ExtraToTensor;
 use spark_media::Image;
 use std::cmp::Ordering;
+use std::sync::LazyLock;
+use spark_ffmpeg::pixformat::AVPixelFormat::AvPixFmtRgb24;
 
 const IMG_URL: &str = r#"./data/image/c.jpg"#;
 const MODEL_URL: &str = r#"./data/model/best.onnx"#;
+
+static SESSION: LazyLock<Session> = LazyLock::new(|| {
+    // let provider = TensorRTExecutionProvider::default().build().error_on_failure();
+    let provider = CUDAExecutionProvider::default().build().error_on_failure();
+    ort::init()
+        .with_execution_providers([provider])
+        .commit()
+        .unwrap();
+    let model = Session::builder()
+        .unwrap()
+        .commit_from_file(MODEL_URL)
+        .unwrap();
+    model
+});
 
 #[test]
 fn test_inference() {
@@ -21,25 +35,18 @@ fn test_inference() {
 }
 
 pub fn inference() -> anyhow::Result<()> {
-    // let provider = TensorRTExecutionProvider::default().build().error_on_failure();
-    let provider = CUDAExecutionProvider::default().build().error_on_failure();
-    ort::init()
-        .with_execution_providers([provider])
-        .commit()?;
-    let model = Session::builder()?.commit_from_file(MODEL_URL)?;
-
     debug!("Start reading image");
     let mut input = Image::open("/home/spark-starlight/data/image/b.png")?;
     debug!("Finish reading image");
     input.decode()?;
     debug!("Finish decode image");
     let frame = input.resize((640, 640))?;
-    let tensor = frame.extra_standard_image_to_tensor()?;
+    let tensor_raw = frame.extra_standard_image_to_tensor()?;
     debug!("Finish converting image to tensor");
 
     let tensor = {
         let device = CudaDevice::new(0)?;
-        let device_data = device.htod_sync_copy(tensor.as_slice())?;
+        let device_data = device.htod_sync_copy(tensor_raw.as_slice())?;
         let tensor: TensorRefMut<'_, f32> = unsafe {
             TensorRefMut::from_raw(
                 MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
@@ -51,8 +58,7 @@ pub fn inference() -> anyhow::Result<()> {
     };
 
     debug!("Finish copying tensor to device");
-    let outputs = [tensor.into()];
-    let outputs = model.run(outputs)?;
+    let outputs = SESSION.run([tensor.into()])?;
     debug!("Finish running model");
 
     let output_first = outputs["output0"].try_extract_tensor::<f32>()?.t().into_owned();
@@ -104,7 +110,7 @@ pub fn inference() -> anyhow::Result<()> {
                     .par_bridge()
                     .for_each(|((y, x), value)| {
                         *value = if (y1 .. y2).contains(&y) && (x1 .. x2).contains(&x) && *value > 0.5 {
-                            255.
+                            100.
                         }else {
                             0.
                         }
@@ -117,9 +123,34 @@ pub fn inference() -> anyhow::Result<()> {
         })
         .collect::<Vec<_>>();
 
-    let mut image = DynamicImage::new_rgb8(640, 640);
+    /*for (index, (box_point, mask, score)) in mask.iter().enumerate() {
+        let tensor = tensor_raw
+            .par_iter()
+            .map(|x| (255. * x) as u8)
+            .enumerate()
+            .map(|(index, x)| {
+                if (0..604 * 640).contains(&index) || (604 * 640 * 2..604 * 640 * 3).contains(&index) {
+                    return x;
+                }
+                if index % 3 == 1 {
+                    mask[[index / 3 / 640, index / 3 % 640]] as u8
+                }else {
+                    x
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut image = Image::from_data((640, 640), AvPixFmtRgb24, 61)?;
+        let packet = image.fill_data(&tensor)?;
+        packet.save(format!("/home/spark-starlight/data/out/mask_{}_iou_{}.png", index, score))?;
+    }*/
+
+
+    // image.fill_data()?;
+
+/*    let mut image = DynamicImage::new_rgb8(640, 640);
     debug!("image size: {:?}", image.dimensions());
-    for (i, (boxed, mask, score)) in mask.iter().enumerate() {
+
+    for (index, (box_point, mask, score)) in mask.iter().enumerate() {
         mask
             .indexed_iter()
             .for_each(|((y, x), &value)| {
@@ -145,9 +176,9 @@ pub fn inference() -> anyhow::Result<()> {
                     );
                 }
             });
-        image.save(format!("./data/out/mask_{}_iou_{}.png", i, score))?;
+        image.save(format!("./data/out/mask_{}_iou_{}.png", index, score))?;
     }
-
+*/
     Ok(())
 }
 

@@ -1,5 +1,5 @@
 use crate::{Image, CODEC};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use hashbrown::HashMap;
 use log::warn;
 use parking_lot::{Mutex, RwLock};
@@ -12,7 +12,6 @@ use spark_ffmpeg::avstream::AVCodecID;
 use spark_ffmpeg::pixformat::AVPixelFormat;
 use spark_ffmpeg::sws::SwsContext;
 use std::fmt::format;
-use std::intrinsics::wrapping_add;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::LazyLock;
