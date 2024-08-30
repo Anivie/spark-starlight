@@ -51,6 +51,11 @@ fn test_encoder_and_decoder() {
         let packet = image.fill_data(tensor.as_slice())?;
         packet.save("/home/spark-starlight/data/out/test_ead.png")?;
 
+        let mut image = Image::from_data((641, 641), AVPixelFormat::AvPixFmtRgb24, 61)?;
+        let frame = input.resize((641, 641), AVPixelFormat::AvPixFmtRgb24)?;
+        let packet = image.fill_data(frame.get_raw_data(0).as_slice())?;
+        packet.save("/home/spark-starlight/data/out/test_ead_r.png")?;
+
         Ok(())
     };
 
