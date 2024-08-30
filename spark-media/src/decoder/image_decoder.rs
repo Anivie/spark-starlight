@@ -70,12 +70,12 @@ impl Image {
         Ok(frame)
     }
 
-    pub fn resize(&self, size: (i32, i32)) -> Result<AVFrame> {
-        let sws = SwsContext::from_format_context(&self.codec, Some(AVPixelFormat::AvPixFmtRgb24), Some((size.0, size.1)), None)?;
+    pub fn resize(&self, size: (i32, i32), format: AVPixelFormat) -> Result<AVFrame> {
+        let sws = SwsContext::from_format_context(&self.codec, Some(format), Some((size.0, size.1)), None)?;
         let scaled_frame = {
             let mut scaled_frame = AVFrame::new()?;
             scaled_frame.set_size(size.0, size.1);
-            scaled_frame.alloc_image(AVPixelFormat::AvPixFmtRgb24, size.0, size.1)?;
+            scaled_frame.alloc_image(format, size.0, size.1)?;
             scaled_frame
         };
         sws.scale_image(self.codec.last_frame(), &scaled_frame)?;

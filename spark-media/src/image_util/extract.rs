@@ -22,11 +22,15 @@ impl ExtraToTensor for AVFrame {
     fn extra_standard_image_to_tensor(&self) -> Result<Vec<f32>> {
         let size = (self.get_width() * self.get_width() * 3) as usize;
 
-        let mut tensor = Vec::with_capacity(size);
+        let mut tensor = {
+            let mut vec = Vec::with_capacity(size);
+            unsafe { vec.set_len(size); }
+            vec
+        };
         let tensor_ptr = SafeVecPtr(tensor.as_mut_ptr());
 
         self
-            .get_data(0)
+            .get_raw_data(0)
             .iter()
             .enumerate()
             .par_bridge()
@@ -43,7 +47,6 @@ impl ExtraToTensor for AVFrame {
                     unsafe { *tensor_ptr.wrapping_add(size * 2 / 3 + index / 3) = value as f32 / 255.; }
                 }
             });
-        unsafe { tensor.set_len(size); }
 
         Ok(tensor)
     }

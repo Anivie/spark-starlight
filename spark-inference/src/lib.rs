@@ -10,12 +10,13 @@ use spark_media::image_util::extract::ExtraToTensor;
 use spark_media::Image;
 use std::cmp::Ordering;
 use std::sync::LazyLock;
-use spark_ffmpeg::pixformat::AVPixelFormat::AvPixFmtRgb24;
+use spark_ffmpeg::pixformat::AVPixelFormat;
+use spark_ffmpeg::pixformat::AVPixelFormat::{AvPixFmtGray8, AvPixFmtRgb24};
 
 const IMG_URL: &str = r#"./data/image/c.jpg"#;
 const MODEL_URL: &str = r#"./data/model/best.onnx"#;
 
-static SESSION: LazyLock<Session> = LazyLock::new(|| {
+/*static SESSION: LazyLock<Session> = LazyLock::new(|| {
     // let provider = TensorRTExecutionProvider::default().build().error_on_failure();
     let provider = CUDAExecutionProvider::default().build().error_on_failure();
     ort::init()
@@ -28,19 +29,21 @@ static SESSION: LazyLock<Session> = LazyLock::new(|| {
         .unwrap();
     model
 });
-
-#[test]
-fn test_inference() {
-    inference().unwrap();
-}
-
+*/
 pub fn inference() -> anyhow::Result<()> {
+    // let provider = TensorRTExecutionProvider::default().build().error_on_failure();
+    let provider = CUDAExecutionProvider::default().build().error_on_failure();
+    ort::init()
+        .with_execution_providers([provider])
+        .commit()?;
+    let model = Session::builder()?.commit_from_file(MODEL_URL)?;
+
     debug!("Start reading image");
-    let mut input = Image::open("/home/spark-starlight/data/image/b.png")?;
+    let mut image = Image::open("/home/spark-starlight/data/image/b.png")?;
     debug!("Finish reading image");
-    input.decode()?;
+    image.decode()?;
     debug!("Finish decode image");
-    let frame = input.resize((640, 640))?;
+    let frame = image.resize((640, 640), AvPixFmtRgb24)?;
     let tensor_raw = frame.extra_standard_image_to_tensor()?;
     debug!("Finish converting image to tensor");
 
@@ -58,7 +61,7 @@ pub fn inference() -> anyhow::Result<()> {
     };
 
     debug!("Finish copying tensor to device");
-    let outputs = SESSION.run([tensor.into()])?;
+    let outputs = model.run([tensor.into()])?;
     debug!("Finish running model");
 
     let output_first = outputs["output0"].try_extract_tensor::<f32>()?.t().into_owned();
@@ -123,26 +126,13 @@ pub fn inference() -> anyhow::Result<()> {
         })
         .collect::<Vec<_>>();
 
-    /*for (index, (box_point, mask, score)) in mask.iter().enumerate() {
-        let tensor = tensor_raw
-            .par_iter()
-            .map(|x| (255. * x) as u8)
-            .enumerate()
-            .map(|(index, x)| {
-                if (0..604 * 640).contains(&index) || (604 * 640 * 2..604 * 640 * 3).contains(&index) {
-                    return x;
-                }
-                if index % 3 == 1 {
-                    mask[[index / 3 / 640, index / 3 % 640]] as u8
-                }else {
-                    x
-                }
-            })
-            .collect::<Vec<_>>();
+    for (index, (box_point, mask, score)) in mask.iter().enumerate() {
+        let frame = image.resize((640, 640), AvPixFmtRgb24)?;
+        let mut data = frame.get_raw_data(0);
         let mut image = Image::from_data((640, 640), AvPixFmtRgb24, 61)?;
-        let packet = image.fill_data(&tensor)?;
+        let packet = image.fill_data(data.as_mut_slice())?;
         packet.save(format!("/home/spark-starlight/data/out/mask_{}_iou_{}.png", index, score))?;
-    }*/
+    }
 
 
     // image.fill_data()?;

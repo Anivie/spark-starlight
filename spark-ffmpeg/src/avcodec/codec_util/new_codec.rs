@@ -35,7 +35,7 @@ impl AVCodecContext {
     }
 
     /// Fill the data with the frame.
-    /// Note: The data should be in the format of RRR|GGG|BBB|RRR|GGG|BBB|...
+    /// Note: The data should be in the format of RGB|RGB|RGB|RGB|RGB|RGB|RGB|RGB|...
     ///       or in the format of Y|Y|Y|Y|Y|Y|Y|Y|...
     pub fn fill_data(&mut self, data: &[u8]) {
         if self.pix_fmt == AVPixelFormat::AvPixFmtGray8 as i32 {
@@ -54,29 +54,25 @@ impl AVCodecContext {
 
         let mut ptr = SafeVecPtr(frame.data[0]);
 
-        (0..width)
-            .into_par_iter()
-            .zip(0..height)
-            .for_each(|(x, y)| {
-                let index = x * y;
+        data
+            .par_iter()
+            .enumerate()
+            .for_each(|(index, &x)| {
                 if index % 3 == 0 {
                     unsafe {
-                        *ptr.add((y * line_size) as usize) = *data.as_ptr().cast_mut().add((y * width * 3) as usize);
+                        *ptr.add(index) = x;
                     }
-                }
-                if index % 3 == 1 {
+                }else if index % 3 == 1 {
                     unsafe {
-                        *ptr.add((y * line_size) as usize + 1) = *data.as_ptr().cast_mut().add((y * width * 3 + 1) as usize);
+                        *ptr.add(index) = x;
                     }
-                }
-                if index % 3 == 2 {
+                }else if index % 3 == 2 {
                     unsafe {
-                        *ptr.add((y * line_size) as usize + 2) = *data.as_ptr().cast_mut().add((y * width * 3 + 2) as usize);
+                        *ptr.add(index) = x;
                     }
                 }
             });
     }
-
     fn fill_data_gray(&mut self, data: &[u8]) {
         let frame = &self.inner_frame;
 
