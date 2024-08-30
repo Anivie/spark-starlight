@@ -34,55 +34,20 @@ impl AVCodecContext {
         })
     }
 
-    /// Fill the data with the frame.
-    /// Note: The data should be in the format of RGB|RGB|RGB|RGB|RGB|RGB|RGB|RGB|...
-    ///       or in the format of Y|Y|Y|Y|Y|Y|Y|Y|...
     pub fn fill_data(&mut self, data: &[u8]) {
-        if self.pix_fmt == AVPixelFormat::AvPixFmtGray8 as i32 {
-            self.fill_data_gray(data);
-        } else {
-            self.fill_data_rgb(data);
-        }
-    }
-
-    fn fill_data_rgb(&mut self, data: &[u8]) {
         let frame = &self.inner_frame;
 
-        let width = unsafe { *self.inner }.width;
-        let height = unsafe { *self.inner }.height;
-        let line_size = frame.linesize[0];
-
-        let mut ptr = SafeVecPtr(frame.data[0]);
-
-        data
-            .par_iter()
-            .enumerate()
-            .for_each(|(index, &x)| {
-                if index % 3 == 0 {
-                    unsafe {
-                        *ptr.add(index) = x;
-                    }
-                }else if index % 3 == 1 {
-                    unsafe {
-                        *ptr.add(index) = x;
-                    }
-                }else if index % 3 == 2 {
-                    unsafe {
-                        *ptr.add(index) = x;
-                    }
-                }
-            });
-    }
-    fn fill_data_gray(&mut self, data: &[u8]) {
-        let frame = &self.inner_frame;
-
-        let width = unsafe { *self.inner }.width;
+        let width = if self.pix_fmt == AVPixelFormat::AvPixFmtGray8 as i32 {
+            unsafe { *self.inner }.width
+        }else {
+            unsafe { *self.inner }.width * 3
+        };
         let height = unsafe { *self.inner }.height;
         let line_size = frame.linesize[0];
 
         if width % 2 == 0 && height % 2 == 0 {
             unsafe {
-                frame.data[0].copy_from_nonoverlapping(data.as_ptr(), (width * height)as usize);
+                frame.data[0].copy_from_nonoverlapping(data.as_ptr(), (width * height) as usize);
             }
             return;
         }
@@ -90,12 +55,12 @@ impl AVCodecContext {
         let mut ptr = SafeVecPtr(frame.data[0]);
         (0..height)
             .into_par_iter()
-            .for_each(|x| {
+            .for_each(|y| {
                 unsafe {
                     ptr
-                        .add((x * line_size) as usize)
+                        .add((y * line_size) as usize)
                         .copy_from_nonoverlapping(
-                            data.as_ptr().add((x * width) as usize),
+                            data.as_ptr().add((y * width) as usize),
                             width as usize
                         )
                 }

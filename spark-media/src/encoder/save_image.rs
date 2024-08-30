@@ -38,7 +38,7 @@ fn test_encoder_and_decoder() {
         println!("Finish reading image");
         input.decode()?;
         println!("Finish decode image");
-        let frame = input.resize((640, 640))?;
+        let frame = input.resize((640, 640), AVPixelFormat::AvPixFmtRgb24)?;
         let tensor = frame.extra_standard_image_to_tensor()?;
         let tensor: Vec<u8> = tensor
             .par_iter()
