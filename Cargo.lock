@@ -1440,8 +1440,9 @@ dependencies = [
 name = "spark-starlight"
 version = "0.1.0"
 dependencies = [
- "spark-ffmpeg",
+ "anyhow",
  "spark-inference",
+ "spark-media",
 ]
 
 [[package]]

@@ -5,4 +5,6 @@ edition = "2021"
 
 [dependencies]
 spark-inference = { path = "../spark-inference" }
-spark-ffmpeg = { path = "../spark-ffmpeg" }
+spark-media = { path = "../spark-media" }
+
+anyhow = "1.0.86"
