@@ -53,6 +53,10 @@ impl SwsContext {
 
 #[test]
 fn test_sws_context() {
+    use crate::avcodec::{AVCodec, AVCodecContext};
+    use crate::avformat::AVFormatContext;
+    use crate::avformat::avformat_context::OpenFileToAVFormatContext;
+
     let mut av_format_context = AVFormatContext::open_file("./data/a.png", None).unwrap();
     av_format_context.video_stream().unwrap().for_each(|(_, x)| {
         let codec = AVCodec::new_decoder(x).unwrap();
