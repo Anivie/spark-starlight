@@ -1,6 +1,5 @@
 use crate::avformat::{AVFormatContext, AVMediaType};
-use crate::avframe::AVFrame;
-use crate::ffi::{avformat_find_stream_info, AVDictionary, AVMediaType_AVMEDIA_TYPE_AUDIO, AVMediaType_AVMEDIA_TYPE_VIDEO, AVStream};
+use crate::ffi::{avformat_find_stream_info, AVDictionary, AVStream};
 use anyhow::anyhow;
 use std::ptr::null_mut;
 

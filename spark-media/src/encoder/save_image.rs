@@ -1,4 +1,3 @@
-use crate::image_util::extract::ExtraToTensor;
 use crate::Image;
 use anyhow::Result;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
@@ -10,7 +9,7 @@ impl Image {
     pub fn from_data(size: (i32, i32), pixel_format: AVPixelFormat, codec_id: AVCodecID) -> Result<Self> {
         let codec = AVCodec::new_encoder_with_id(codec_id)?;
 
-        let mut codec_context = AVCodecContext::new_save(&codec, size, pixel_format, 400000)?;
+        let codec_context = AVCodecContext::new_save(&codec, size, pixel_format, 400000)?;
 
         Ok(Image {
             format: None,
@@ -30,6 +29,7 @@ impl Image {
 
 #[test]
 fn test_encoder_and_decoder() {
+    use crate::image_util::extract::ExtraToTensor;
     let nao: fn() -> Result<()> = || {
         use rayon::prelude::*;
 

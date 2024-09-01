@@ -1,6 +1,4 @@
-use crate::avcodec::{AVCodec, AVCodecContext};
-use crate::avformat::avformat_context::OpenFileToAVFormatContext;
-use crate::avformat::AVFormatContext;
+use crate::avcodec::AVCodecContext;
 use crate::avframe::AVFrame;
 use crate::ffi::{sws_getContext, sws_scale, SWS_BILINEAR};
 use crate::pixformat::AVPixelFormat;
@@ -15,8 +13,8 @@ impl SwsContext {
                 codec_context.width,
                 codec_context.height,
                 codec_context.pix_fmt,
-                dst_size.map(|(x, y)| x).unwrap_or(codec_context.width),
-                dst_size.map(|(x, y)| y).unwrap_or(codec_context.height),
+                dst_size.map(|(x, _)| x).unwrap_or(codec_context.width),
+                dst_size.map(|(_, y)| y).unwrap_or(codec_context.height),
                 dst_format.map(|x| x as i32).unwrap_or(codec_context.pix_fmt),
                 flags.map(|x| x as i32).unwrap_or(SWS_BILINEAR as i32),
                 null_mut(),

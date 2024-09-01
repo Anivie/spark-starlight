@@ -1,6 +1,6 @@
-use crate::avformat::{AVFormatContext, AVFormatContextRaw, AVMediaType};
+use crate::avformat::{AVFormatContext, AVFormatContextRaw};
 use crate::avpacket::AVPacket;
-use crate::ffi::{av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat, AVMediaType_AVMEDIA_TYPE_VIDEO};
+use crate::ffi::{av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat};
 use anyhow::Result;
 use std::ffi::CString;
 use std::ptr::{null, null_mut};
@@ -77,6 +77,7 @@ impl AVFormatContext {
 
 #[test]
 fn test_video_stream() {
+    use crate::ffi::AVMediaType_AVMEDIA_TYPE_VIDEO;
     let mut a = AVFormatContext::open_file("./data/a.png", None).unwrap();
     let stream = a.video_stream().unwrap();
     stream.for_each(|(_, x)| {
@@ -87,6 +88,7 @@ fn test_video_stream() {
 
 #[test]
 fn test_format() {
+    use crate::avformat::AVMediaType;
     let mut a = AVFormatContext::open_file("./data/a.png", None).unwrap();
     a.find_stream(AVMediaType::VIDEO).and_then(|x| {
         println!("{:?}", x);

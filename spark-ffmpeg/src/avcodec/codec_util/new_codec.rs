@@ -10,7 +10,7 @@ impl Deref for SafeVecPtr {
     type Target = *mut u8;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &self.0 }
+        &self.0
     }
 }
 unsafe impl Send for SafeVecPtr {}
@@ -52,7 +52,7 @@ impl AVCodecContext {
             return;
         }
 
-        let mut ptr = SafeVecPtr(frame.data[0]);
+        let ptr = SafeVecPtr(frame.data[0]);
         (0..height)
             .into_par_iter()
             .for_each(|y| {

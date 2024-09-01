@@ -4,6 +4,7 @@ use iter::frame_iter::PixelData;
 pub mod open_frame;
 pub mod frame_info;
 mod iter;
+mod operator;
 
 wrap!(
   AVFrame drop2 av_frame_free

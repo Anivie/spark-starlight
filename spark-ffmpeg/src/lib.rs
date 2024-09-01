@@ -1,13 +1,11 @@
 #![feature(new_uninit)]
-#![allow(warnings)]
+#![allow(dead_code)]
 
 use crate::avformat::AVMediaType;
 use crate::avframe::AVFrame;
 use crate::pixformat::AVPixelFormat;
 use crate::sws::SwsContext;
 use anyhow::Result;
-use image::{GenericImage, GenericImageView, Pixel};
-use std::io::Write;
 use std::mem::ManuallyDrop;
 
 #[macro_use]
@@ -33,7 +31,7 @@ pub fn get_pixels() -> Result<Vec<f32>> {
     let mut av_format_context = AVFormatContext::open_file("/home/spark-starlight/data/image/b.png", None)?;
     let stream = av_format_context.video_stream()?;
     let mut codecs = stream
-        .map(|(stream_index, av_stream)| {
+        .map(|(_, av_stream)| {
             let codec = AVCodec::new_decoder(av_stream).unwrap();
             let av_codec_context = AVCodecContext::new(&codec, av_stream, None).unwrap();
 
@@ -42,7 +40,7 @@ pub fn get_pixels() -> Result<Vec<f32>> {
         .collect::<Vec<_>>();
     let av_codec_context = codecs.remove(0);
 
-    let mut vec = av_format_context
+    let vec = av_format_context
         .frames(AVMediaType::VIDEO)?
         .map(|mut packet| {
             av_codec_context.send_packet(&mut packet).unwrap();

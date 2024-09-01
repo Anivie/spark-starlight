@@ -1,11 +1,10 @@
-use crate::avcodec::{AVCodec, AVCodecContext, AVCodecContextRaw, AVCodecRaw};
-use crate::avformat::AVFormatContext;
+use crate::avcodec::{AVCodec, AVCodecContext, AVCodecContextRaw};
 use crate::avframe::AVFrame;
 use crate::avpacket::AVPacket;
-use crate::ffi::{av_image_get_buffer_size, avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, avcodec_receive_frame, avcodec_receive_packet, avcodec_send_frame, avcodec_send_packet, AVCodecID_AV_CODEC_ID_PNG, AVCodecParameters, AVDictionary, AVPixelFormat_AV_PIX_FMT_RGB24, AVStream};
+use crate::ffi::{av_image_get_buffer_size, avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, avcodec_receive_frame, avcodec_receive_packet, avcodec_send_frame, avcodec_send_packet, AVCodecParameters, AVDictionary, AVStream};
 use crate::pixformat::AVPixelFormat;
-use anyhow::{anyhow, Result};
-use std::ptr::{null, null_mut};
+use anyhow::{anyhow, bail, Result};
+use std::ptr::null_mut;
 
 impl AVCodecContext {
     pub fn new(codec: &AVCodec, stream: &AVStream, av_dictionary: Option<AVDictionary>) -> Result<Self> {
@@ -14,7 +13,7 @@ impl AVCodecContext {
         };
 
         if ptr.is_null() {
-            return anyhow::bail!("Failed to allocate codec context.");
+            bail!("Failed to allocate codec context.");
         }
 
         let mut context = AVCodecContext { inner: ptr, inner_frame: AVFrame::new()? };
@@ -32,7 +31,7 @@ impl AVCodecContext {
             avcodec_alloc_context3(codec.inner.cast_const())
         };
         if ptr.is_null() {
-            return anyhow::bail!("Failed to allocate codec context.");
+            bail!("Failed to allocate codec context.");
         }
 
         let ptr = custom(ptr);
@@ -48,7 +47,7 @@ impl AVCodecContext {
             frame
         };
 
-        let mut context = AVCodecContext { inner: ptr, inner_frame: frame };
+        let context = AVCodecContext { inner: ptr, inner_frame: frame };
         context.open(codec, None)?;
 
         Ok(context)
@@ -142,6 +141,8 @@ impl AVCodecContext {
 #[test]
 fn test_codec_context() {
     use crate::avformat::avformat_context::OpenFileToAVFormatContext;
+    use crate::ffi::AVCodecID_AV_CODEC_ID_PNG;
+    use crate::avformat::AVFormatContext;
 
     let mut format_context = AVFormatContext::open_file("./data/a.png", None).unwrap();
     format_context.video_stream().unwrap().for_each(|(_, x)| {

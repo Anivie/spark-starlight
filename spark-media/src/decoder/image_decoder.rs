@@ -1,26 +1,17 @@
 use crate::{Image, CODEC};
 use anyhow::{bail, Result};
-use hashbrown::HashMap;
 use log::warn;
-use parking_lot::{Mutex, RwLock};
-use rayon::prelude::*;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avformat::avformat_context::OpenFileToAVFormatContext;
 use spark_ffmpeg::avformat::{AVFormatContext, AVMediaType};
 use spark_ffmpeg::avframe::AVFrame;
-use spark_ffmpeg::avstream::AVCodecID;
 use spark_ffmpeg::pixformat::AVPixelFormat;
 use spark_ffmpeg::sws::SwsContext;
-use std::fmt::format;
-use std::ops::Deref;
-use std::path::Path;
-use std::sync::LazyLock;
-use tokio::fs::File;
 
 impl Image {
     pub fn open(path: impl Into<String>) -> Result<Self> {
         let mut format = AVFormatContext::open_file(path, None)?;
-        let codec_context = format.video_stream()?.map(|(index, stream)| {
+        let codec_context = format.video_stream()?.map(|(_, stream)| {
             let id = stream.codec_id();
             let codec_guard = CODEC.read();
             let codec = codec_guard.get(&id).cloned();

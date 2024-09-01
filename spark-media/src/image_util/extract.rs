@@ -8,7 +8,7 @@ impl Deref for SafeVecPtr {
     type Target = *mut f32;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &self.0 }
+        &self.0
     }
 }
 unsafe impl Send for SafeVecPtr {}
