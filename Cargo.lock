@@ -1441,6 +1441,7 @@ name = "spark-starlight"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ndarray",
  "spark-inference",
  "spark-media",
 ]

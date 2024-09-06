@@ -3,6 +3,7 @@ extern crate core;
 
 use spark_inference::engine::inference_engine::InferenceEngine;
 use anyhow::Result;
+use ndarray::s;
 use spark_inference::engine::run::ModelInference;
 use spark_media::AVPixelFormat::AvPixFmtRgb24;
 use spark_media::Image;
@@ -22,7 +23,9 @@ fn main() -> Result<()> {
         frame.layering_mask(0, mask)?;
         let mut image = Image::from_data((640, 640), AvPixFmtRgb24, 61)?;
         let packet = image.fill_data(frame.get_raw_data(0).as_mut_slice())?;
-        packet.save(format!("/home/spark-starlight/data/out/mask_{}_iou_{}.png", index, score))?;
+
+        let masks = &mask.slice(s![600.., ..]);
+        println!("masks.shape: {:?}", masks.shape());
     }
 
     Ok(())

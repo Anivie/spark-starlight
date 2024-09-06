@@ -36,6 +36,7 @@ impl Image {
         Ok(Image {
             format: Some(format),
             codec: codec_context,
+            sws: None,
         })
     }
 
@@ -61,14 +62,23 @@ impl Image {
         Ok(frame)
     }
 
-    pub fn resize(&self, size: (i32, i32), format: AVPixelFormat) -> Result<AVFrame> {
-        let sws = SwsContext::from_format_context(&self.codec, Some(format), Some((size.0, size.1)), None)?;
+    pub fn resize(&mut self, size: (i32, i32), format: AVPixelFormat) -> Result<AVFrame> {
+        let sws = match &self.sws {
+            Some(sws) => sws,
+            None => {
+                let sws = SwsContext::from_format_context(&self.codec, Some(format), Some((size.0, size.1)), None)?;
+                self.sws = Some(sws);
+                self.sws.as_ref().unwrap()
+            }
+        };
+
         let scaled_frame = {
             let mut scaled_frame = AVFrame::new()?;
             scaled_frame.set_size(size.0, size.1);
             scaled_frame.alloc_image(format, size.0, size.1)?;
             scaled_frame
         };
+
         sws.scale_image(self.codec.last_frame(), &scaled_frame)?;
 
         Ok(scaled_frame)

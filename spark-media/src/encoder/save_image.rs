@@ -12,6 +12,7 @@ impl Image {
         let codec_context = AVCodecContext::new_save(&codec, size, pixel_format, 400000)?;
 
         Ok(Image {
+            sws: None,
             format: None,
             codec: codec_context,
         })
