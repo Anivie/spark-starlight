@@ -1,4 +1,3 @@
-#![feature(new_uninit)]
 #![allow(dead_code)]
 
 use crate::avformat::AVMediaType;

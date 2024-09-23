@@ -4,16 +4,24 @@ use crate::engine::entity::box_point::Box;
 use anyhow::Result;
 use cudarc::driver::{CudaDevice, DevicePtr};
 use log::debug;
-use ndarray::{s, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
+use ndarray::{s, Array1, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
 use ort::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType, TensorRefMut};
 use rayon::prelude::*;
 
 pub trait ModelInference {
-    fn inference(&self, tensor: &[f32], confidence: f32, probability_mask: f32) -> Result<Vec<(Box, Array2<f32>, f32)>>;
+    fn inference(&self, tensor: &[f32], confidence: f32, probability_mask: f32) -> Result<Vec<InferenceResult>>;
+}
+
+#[derive(Debug, Clone)]
+pub struct InferenceResult {
+    pub boxes: Box,
+    pub classify: Array1<f32>,
+    pub mask: Array2<f32>,
+    pub score: f32,
 }
 
 impl ModelInference for InferenceEngine {
-    fn inference(&self, tensor: &[f32], confidence: f32, probability_mask: f32) -> Result<Vec<(Box, Array2<f32>, f32)>> {
+    fn inference(&self, tensor: &[f32], confidence: f32, probability_mask: f32) -> Result<Vec<InferenceResult>> {
         let tensor = {
             let device = CudaDevice::new(0)?;
             let device_data = device.htod_sync_copy(tensor)?;
@@ -89,8 +97,11 @@ impl ModelInference for InferenceEngine {
                 };
 
                 let boxed = Box { x1, y1, x2, y2 };
+                let classify = box_output.slice(s![4 .. box_output.len() - 32]);
+                let classify = classify.to_owned();
 
-                (boxed, mask, score)
+
+                InferenceResult { boxes: boxed, classify, mask, score }
             })
             .collect::<Vec<_>>();
 

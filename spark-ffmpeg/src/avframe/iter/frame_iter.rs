@@ -10,7 +10,8 @@ pub struct PixelData {
     pub(in crate::avframe) current_y: i32,
 }
 
-pub struct RGB(u8, u8, u8);
+#[derive(Debug, Copy, Clone)]
+pub struct RGB(pub u8, pub u8, pub u8);
 
 impl Iterator for PixelData {
     type Item = (i32, i32, RGB);

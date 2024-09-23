@@ -9,4 +9,4 @@ spark-media = { path = "../spark-media" }
 
 ndarray = { version = "0.16.1", features = ["rayon"] }
 
-anyhow = "1.0.86"
+anyhow = "1.0.89"

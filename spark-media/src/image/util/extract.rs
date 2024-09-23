@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rayon::prelude::*;
-use spark_ffmpeg::avframe::AVFrame;
 use std::ops::Deref;
+use crate::Image;
 
 struct SafeVecPtr(*mut f32);
 impl Deref for SafeVecPtr {
@@ -18,7 +18,7 @@ pub trait ExtraToTensor {
     fn extra_standard_image_to_tensor(&self) -> Result<Vec<f32>>;
 }
 
-impl ExtraToTensor for AVFrame {
+impl ExtraToTensor for Image {
     fn extra_standard_image_to_tensor(&self) -> Result<Vec<f32>> {
         let size = (self.get_width() * self.get_width() * 3) as usize;
 
@@ -30,6 +30,7 @@ impl ExtraToTensor for AVFrame {
         let tensor_ptr = SafeVecPtr(tensor.as_mut_ptr());
 
         self
+            .frame()
             .get_raw_data(0)
             .iter()
             .enumerate()

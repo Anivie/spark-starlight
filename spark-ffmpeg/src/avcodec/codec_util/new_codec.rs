@@ -66,6 +66,10 @@ impl AVCodecContext {
                 }
             });
     }
+
+    pub fn size(&self) -> (i32, i32) {
+        (unsafe { *self.inner }.width, unsafe { *self.inner }.height)
+    }
 }
 
 #[test]

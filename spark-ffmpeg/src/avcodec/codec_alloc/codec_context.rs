@@ -135,6 +135,10 @@ impl AVCodecContext {
     pub fn last_frame(&self) -> &AVFrame {
         &self.inner_frame
     }
+
+    pub fn replace_frame(&mut self, frame: AVFrame) {
+        self.inner_frame = frame;
+    }
 }
 
 
