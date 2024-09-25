@@ -18,14 +18,14 @@ impl AVCodecContext {
 
         let mut context = AVCodecContext { inner: ptr, inner_frame: AVFrame::new()? };
         context.apply_format(stream)?;
-        context.open(codec, av_dictionary)?;
+        context.open(Some(codec), av_dictionary)?;
 
         Ok(context)
     }
 
     pub(crate) fn new_custom<F>(codec: &AVCodec, mut custom: F) -> Result<Self>
     where
-        F: FnMut(*mut AVCodecContextRaw) -> *mut AVCodecContextRaw
+        F: FnMut(*mut AVCodecContextRaw) -> ()
     {
         let ptr = unsafe {
             avcodec_alloc_context3(codec.inner.cast_const())
@@ -34,7 +34,7 @@ impl AVCodecContext {
             bail!("Failed to allocate codec context.");
         }
 
-        let ptr = custom(ptr);
+        custom(ptr);
 
         let frame = {
             let mut frame = AVFrame::new()?;
@@ -48,16 +48,16 @@ impl AVCodecContext {
         };
 
         let context = AVCodecContext { inner: ptr, inner_frame: frame };
-        context.open(codec, None)?;
+        context.open(Some(codec), None)?;
 
         Ok(context)
     }
 
-    fn open(&self, codec: &AVCodec, av_dictionary: Option<AVDictionary>) -> Result<()> {
+    pub fn open(&self, codec: Option<&AVCodec>, av_dictionary: Option<AVDictionary>) -> Result<()> {
         native! {
             avcodec_open2(
                 self.inner,
-                codec.inner.cast_const(),
+                codec.map(|x| x.inner).unwrap_or(self.codec.cast_mut()),
                 av_dictionary
                     .map(|mut x| &mut (&mut x as *mut AVDictionary)as *mut *mut AVDictionary)
                     .unwrap_or(null_mut())
@@ -108,12 +108,13 @@ impl AVCodecContext {
         Ok(())
     }
 
-    pub fn receive_packet(&self, packet: &mut AVPacket) -> Result<()> {
+    pub fn receive_packet(&self) -> Result<AVPacket> {
+        let packet = AVPacket::new()?;
         ffmpeg! {
             avcodec_receive_packet(self.inner, packet.inner)
         }
 
-        Ok(())
+        Ok(packet)
     }
 
     pub fn receive_frame(&self) -> Result<&AVFrame> {
@@ -124,12 +125,12 @@ impl AVCodecContext {
         Ok(&self.inner_frame)
     }
 
-    pub fn send_frame(&self, frame: Option<&AVFrame>) -> Result<&AVFrame> {
+    pub fn send_frame(&self, frame: Option<&AVFrame>) -> Result<()> {
         ffmpeg! {
             avcodec_send_frame(self.inner, frame.map(|x| x.inner).unwrap_or(self.inner_frame.inner))
         }
 
-        Ok(&self.inner_frame)
+        Ok(())
     }
 
     pub fn last_frame(&self) -> &AVFrame {
@@ -138,6 +139,19 @@ impl AVCodecContext {
 
     pub fn replace_frame(&mut self, frame: AVFrame) {
         self.inner_frame = frame;
+    }
+
+    pub fn id(&self) -> u32 {
+        self.codec_id
+    }
+
+    pub fn resize(&mut self, size: (i32, i32)) {
+        self.width = size.0;
+        self.height = size.1;
+    }
+
+    pub fn pixel_format(&self) -> AVPixelFormat {
+        AVPixelFormat::try_from(self.pix_fmt).unwrap()
     }
 }
 

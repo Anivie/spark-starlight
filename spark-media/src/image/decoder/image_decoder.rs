@@ -5,6 +5,7 @@ use log::warn;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avformat::avformat_context::OpenFileToAVFormatContext;
 use spark_ffmpeg::avformat::{AVFormatContext, AVMediaType};
+use spark_ffmpeg::avpacket::AVPacket;
 
 impl Image {
     pub fn open_file(path: impl Into<String>) -> Result<Self> {
@@ -31,24 +32,28 @@ impl Image {
             None => bail!("No video stream found"),
         };
 
-        Self::decode(&codec_context, &mut format)?;
+        let packet = Self::decode(&codec_context, &mut format)?;
 
-        Ok(Image {
-            codec: codec_context,
+        let image = Image {
+            decoder: Some(codec_context),
+            packet: Some(packet),
+            encoder: None,
             utils: ImageUtil {
                 sws: None,
                 format: Some(format),
             },
-            packet: None,
-        })
+        };
+
+        Ok(image)
     }
 
-    fn decode(codec: &AVCodecContext, format: &mut AVFormatContext) -> Result<()> {
-        let vec = format
+    fn decode(codec: &AVCodecContext, format: &mut AVFormatContext) -> Result<AVPacket> {
+        let mut vec = format
             .frames(AVMediaType::VIDEO)?
             .map(|mut packet| {
                 codec.send_packet(&mut packet)?;
-                codec.receive_frame()
+                codec.receive_frame()?;
+                Ok(packet)
             })
             .collect::<Vec<_>>();
 
@@ -56,6 +61,8 @@ impl Image {
             warn!("More than one frame found, using the first one");
         }
 
-        Ok(())
+        let packet: Result<AVPacket> = vec.remove(0);
+
+        Ok(packet?)
     }
 }

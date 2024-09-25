@@ -7,12 +7,11 @@ use std::ptr::slice_from_raw_parts;
 
 impl AVPacket {
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
-        let file = File::create(path)?;
-        let mut writer = std::io::BufWriter::new(file);
+        let mut file = File::create(path)?;
         let slice = unsafe {
             &*slice_from_raw_parts(self.data, self.size as usize)
         };
-        writer.write(slice)?;
+        file.write(slice)?;
 
         Ok(())
     }

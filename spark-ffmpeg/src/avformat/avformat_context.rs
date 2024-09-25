@@ -3,7 +3,10 @@ use crate::avpacket::AVPacket;
 use crate::ffi::{av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat};
 use anyhow::Result;
 use std::ffi::CString;
+use std::fmt::format;
 use std::ptr::{null, null_mut};
+use num_enum::TryFromPrimitiveError;
+use crate::pixformat::AVPixelFormat;
 
 pub trait OpenFileToAVFormatContext {
     fn open_file(path: impl Into<String>, format: Option<&AVInputFormat>) -> Result<Self>
@@ -72,6 +75,14 @@ impl AVFormatContext {
         );
 
         Ok(())
+    }
+
+    pub fn pixel_format(&self, stream_index: usize) -> Result<AVPixelFormat> {
+        let format = unsafe {
+            (*(**(*self.inner).streams.add(stream_index)).codecpar).format
+        };
+
+        Ok(AVPixelFormat::try_from(format)?)
     }
 }
 

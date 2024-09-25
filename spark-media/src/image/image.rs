@@ -15,5 +15,6 @@ pub struct Image {
     pub(super) packet: Option<AVPacket>,
     pub(super) utils: ImageUtil,
 
-    pub(super) codec: AVCodecContext,
+    pub(super) decoder: Option<AVCodecContext>,
+    pub(super) encoder: Option<AVCodecContext>,
 }

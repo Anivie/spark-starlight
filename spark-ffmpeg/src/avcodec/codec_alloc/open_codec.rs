@@ -19,6 +19,7 @@ impl AVCodec {
             Ok(AVCodec { inner: codec.cast_mut() })
         }
     }
+
     pub fn new_encoder(stream: &AVStream) -> Result<Self> {
         let codec_id = unsafe { (*stream.codecpar).codec_id };
         Self::new_decoder_with_id(codec_id)
@@ -35,6 +36,4 @@ impl AVCodec {
             Ok(AVCodec { inner: codec.cast_mut() })
         }
     }
-
-
 }

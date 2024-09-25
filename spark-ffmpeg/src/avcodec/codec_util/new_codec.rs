@@ -30,8 +30,14 @@ impl AVCodecContext {
                 (*c).max_b_frames = 1;
                 (*c).pix_fmt = pixel_format as i32;
             }
-            c
         })
+    }
+
+    pub fn replace_data(&mut self, data: &[u8]) {
+        let frame = &self.inner_frame;
+        unsafe {
+            frame.data[0].copy_from_nonoverlapping(data.as_ptr(), data.len());
+        }
     }
 
     pub fn fill_data(&mut self, data: &[u8]) {
@@ -68,7 +74,8 @@ impl AVCodecContext {
     }
 
     pub fn size(&self) -> (i32, i32) {
-        (unsafe { *self.inner }.width, unsafe { *self.inner }.height)
+        let context = unsafe { *self.inner };
+        (context.width, context.height)
     }
 }
 

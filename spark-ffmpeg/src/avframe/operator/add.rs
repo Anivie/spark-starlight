@@ -13,11 +13,7 @@ impl AVFrame {
                 if index % 3 == 1 {
                     let mask = mask[[index / 3 / 640, index / 3 % 640]];
                     if mask > 0. {
-                        *value = if *value < 155 {
-                            mask as u8 + *value
-                        } else {
-                            255
-                        }
+                        *value = value.saturating_add(mask as u8);
                     }
                 }
             });
