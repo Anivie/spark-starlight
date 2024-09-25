@@ -1,13 +1,13 @@
 use crate::avcodec::{AVCodec, AVCodecContext, AVCodecContextRaw};
 use crate::avframe::AVFrame;
 use crate::avpacket::AVPacket;
-use crate::ffi::{av_image_get_buffer_size, avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, avcodec_receive_frame, avcodec_receive_packet, avcodec_send_frame, avcodec_send_packet, AVCodecParameters, AVDictionary, AVStream};
+use crate::ffi::{av_image_get_buffer_size, avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, avcodec_receive_frame, avcodec_receive_packet, avcodec_send_frame, avcodec_send_packet, AVCodecParameters, AVDictionary, AVRational, AVStream};
 use crate::pixformat::AVPixelFormat;
 use anyhow::{anyhow, bail, Result};
 use std::ptr::null_mut;
 
 impl AVCodecContext {
-    pub fn new(codec: &AVCodec, stream: &AVStream, av_dictionary: Option<AVDictionary>) -> Result<Self> {
+    pub fn from_stream(codec: &AVCodec, stream: &AVStream, av_dictionary: Option<AVDictionary>) -> Result<Self> {
         let ptr = unsafe {
             avcodec_alloc_context3(codec.inner.cast_const())
         };
@@ -18,6 +18,37 @@ impl AVCodecContext {
 
         let mut context = AVCodecContext { inner: ptr, inner_frame: AVFrame::new()? };
         context.apply_format(stream)?;
+        context.open(Some(codec), av_dictionary)?;
+
+        Ok(context)
+    }
+
+    pub fn from_frame(codec: &AVCodec, avframe: &AVFrame, av_dictionary: Option<AVDictionary>) -> Result<Self> {
+        let ptr = unsafe {
+            avcodec_alloc_context3(codec.inner.cast_const())
+        };
+
+        if ptr.is_null() {
+            bail!("Failed to allocate codec context.");
+        }
+
+        let context = {
+            let mut context = AVCodecContext { inner: ptr, inner_frame: AVFrame::new()? };
+            context.width = avframe.width;
+            context.height = avframe.height;
+            context.pix_fmt = avframe.format as i32;
+
+            context.time_base = AVRational {
+                num: 1,
+                den: 25,
+            };
+
+            context.codec_id = codec.id;
+            context.codec = codec.inner;
+
+            context
+        };
+
         context.open(Some(codec), av_dictionary)?;
 
         Ok(context)
@@ -53,8 +84,8 @@ impl AVCodecContext {
         Ok(context)
     }
 
-    pub fn open(&self, codec: Option<&AVCodec>, av_dictionary: Option<AVDictionary>) -> Result<()> {
-        native! {
+    fn open(&self, codec: Option<&AVCodec>, av_dictionary: Option<AVDictionary>) -> Result<()> {
+        ffmpeg! {
             avcodec_open2(
                 self.inner,
                 codec.map(|x| x.inner).unwrap_or(self.codec.cast_mut()),
@@ -165,7 +196,7 @@ fn test_codec_context() {
     let mut format_context = AVFormatContext::open_file("./data/a.png", None).unwrap();
     format_context.video_stream().unwrap().for_each(|(_, x)| {
         let codec = AVCodec::new_decoder(x).unwrap();
-        let mut ctx = AVCodecContext::new(&codec, x, None).unwrap();
+        let mut ctx = AVCodecContext::from_stream(&codec, x, None).unwrap();
 
         let buffer_size = ctx.calculate_buffer_size(AVPixelFormat::AvPixFmtRgb24).unwrap();
         println!("buffer_size: {:?}", buffer_size);

@@ -3,7 +3,6 @@ use crate::avpacket::AVPacket;
 use crate::ffi::{av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat};
 use anyhow::Result;
 use std::ffi::CString;
-use std::fmt::format;
 use std::ptr::{null, null_mut};
 use num_enum::TryFromPrimitiveError;
 use crate::pixformat::AVPixelFormat;

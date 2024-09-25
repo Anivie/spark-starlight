@@ -16,10 +16,11 @@ fn main() -> Result<()> {
         image.resize_to((640, 640))?;
         image
     };
+    image.save("./data/out/a.png")?;
 
-    let mut nmg = Image::new_with_empty(image.get_size(), image.pixel_format(), image.codec_id())?;
+    /*let mut nmg = Image::new_with_empty(image.get_size(), image.pixel_format(), image.codec_id())?;
     nmg.replace_data(image.raw_data().as_slice())?;
-    nmg.save("./data/out/n.png")?;
+    nmg.save("./data/out/n.png")?;*/
 
     Ok(())
 }

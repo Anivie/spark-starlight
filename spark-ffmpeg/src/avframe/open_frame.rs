@@ -21,6 +21,10 @@ impl AVFrame {
         self.height = height;
     }
 
+    pub fn set_format(&mut self, format: AVPixelFormat) {
+        self.format = format as i32;
+    }
+
     pub fn alloc_image(&mut self, format: AVPixelFormat, width: i32, height: i32) -> Result<i32> {
         let need_size = unsafe {
             av_image_alloc(

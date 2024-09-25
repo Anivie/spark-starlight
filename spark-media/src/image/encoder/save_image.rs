@@ -22,16 +22,16 @@ impl Image {
     }
 
     pub fn replace_data(&mut self, data: &[u8]) -> Result<()> {
-        self.codec.replace_data(data);
+        // self.available_codec().replace_data(data);
 
         Ok(())
     }
 
     pub fn fill_data(&mut self, data: &[u8]) -> Result<()> {
-        self.codec.fill_data(&data);
-        self.codec.send_frame(None)?;
+        // self.available_codec().fill_data(&data);
+        self.available_codec().send_frame(None)?;
 
-        let av_packet = self.codec.receive_packet()?;
+        let av_packet = self.available_codec().receive_packet()?;
         self.packet = Some(av_packet);
 
         Ok(())
@@ -41,9 +41,9 @@ impl Image {
         match &self.packet {
             Some(packet) => packet.save(path)?,
             None => {
-                self.codec.send_frame(None)?;
+                self.available_codec().send_frame(None)?;
 
-                let mut packet = self.codec.receive_packet()?;
+                let mut packet = self.available_codec().receive_packet()?;
                 packet.save(path)?;
 
                 self.packet = Some(packet);

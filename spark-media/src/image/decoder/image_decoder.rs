@@ -12,14 +12,15 @@ impl Image {
         let mut format = AVFormatContext::open_file(path, None)?;
         let codec_context = format.video_stream()?.map(|(_, stream)| {
             let id = stream.codec_id();
-            let codec_guard = CODEC.read();
-            let codec = codec_guard.get(&id).cloned();
+            let codec = {
+                let codec_guard = CODEC.read();
+                codec_guard.get(&id).cloned()
+            };
             match codec {
-                Some(codec) => AVCodecContext::new(&codec, stream, None),
+                Some(codec) => AVCodecContext::from_stream(&codec, stream, None),
                 None => {
-                    drop(codec_guard);
                     let codec = AVCodec::new_decoder_with_id(id)?;
-                    let codec_context = AVCodecContext::new(&codec, stream, None)?;
+                    let codec_context = AVCodecContext::from_stream(&codec, stream, None)?;
                     CODEC.write().insert(id, codec);
                     Ok(codec_context)
                 }

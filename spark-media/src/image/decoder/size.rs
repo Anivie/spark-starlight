@@ -29,24 +29,20 @@ impl ResizeImage for Image {
         let scaled_frame = {
             let mut scaled_frame = AVFrame::new()?;
             scaled_frame.set_size(size.0, size.1);
+            scaled_frame.set_format(pixel_format);
             scaled_frame.alloc_image(pixel_format, size.0, size.1)?;
             scaled_frame
         };
 
         sws.scale_image(self.available_codec().last_frame(), &scaled_frame)?;
 
-        self.available_codec().resize(size);
+        let encoder = AVCodec::new_encoder_with_id(self.decoder.as_ref().unwrap().id())?;
+        let context = AVCodecContext::from_frame(&encoder, &scaled_frame, None)?;
 
-        let encoder = AVCodec::new_decoder_with_id(self.encoder.as_ref().unwrap().id())?;
-        // AVCodecContext::new(&encoder, self.available_codec().stream(), None)?;
-        /*
-        self.codec.open(None, None)?;
-
-        self.codec.send_frame(Some(&scaled_frame))?;
-        let packet = self.codec.receive_packet()?;
-
+        context.send_frame(Some(&scaled_frame))?;
+        let packet = context.receive_packet()?;
         self.packet = Some(packet);
-        self.codec.replace_frame(scaled_frame);*/
+        self.encoder = Some(context);
 
         Ok(())
     }
@@ -77,7 +73,7 @@ impl ResizeImage for Image {
         if new.utils.sws.is_none() {
             new.utils.sws = sws_temp;
         }
-        new.available_codec().replace_frame(scaled_frame);
+        // new.available_codec().replace_frame(scaled_frame);
 
         Ok(new)
     }

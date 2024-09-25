@@ -32,7 +32,7 @@ pub fn get_pixels() -> Result<Vec<f32>> {
     let mut codecs = stream
         .map(|(_, av_stream)| {
             let codec = AVCodec::new_decoder(av_stream).unwrap();
-            let av_codec_context = AVCodecContext::new(&codec, av_stream, None).unwrap();
+            let av_codec_context = AVCodecContext::from_stream(&codec, av_stream, None).unwrap();
 
             av_codec_context
         })

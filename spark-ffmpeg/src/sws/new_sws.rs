@@ -60,7 +60,7 @@ fn test_sws_context() {
     let mut av_format_context = AVFormatContext::open_file("./data/a.png", None).unwrap();
     av_format_context.video_stream().unwrap().for_each(|(_, x)| {
         let codec = AVCodec::new_decoder(x).unwrap();
-        let av_codec_context = AVCodecContext::new(&codec, x, None).unwrap();
+        let av_codec_context = AVCodecContext::from_stream(&codec, x, None).unwrap();
         let _ = SwsContext::from_format_context(&av_codec_context, None, None, None).unwrap();
     });
 }
