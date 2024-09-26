@@ -2,6 +2,7 @@ use crate::avframe::AVFrame;
 use crate::ffi::{av_frame_alloc, av_image_alloc, av_image_fill_arrays};
 use crate::pixformat::AVPixelFormat;
 use anyhow::{anyhow, Result};
+use std::fmt::format;
 
 impl AVFrame {
     pub fn new() -> Result<Self> {
@@ -16,9 +17,9 @@ impl AVFrame {
         }
     }
 
-    pub fn set_size(&mut self, width: i32, height: i32) {
-        self.width = width;
-        self.height = height;
+    pub fn set_size(&mut self, size: (i32, i32)) {
+        self.width = size.0;
+        self.height = size.1;
     }
 
     pub fn set_format(&mut self, format: AVPixelFormat) {

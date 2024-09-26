@@ -1,10 +1,13 @@
-use crate::image::image::ImageUtil;
+use crate::image::image::{ImageInner, ImageUtil};
+use crate::image::util::inner_lock::InnerLock;
 use crate::{Image, CODEC};
 use anyhow::{bail, Result};
 use log::warn;
+use parking_lot::RwLock;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avformat::avformat_context::OpenFileToAVFormatContext;
 use spark_ffmpeg::avformat::{AVFormatContext, AVMediaType};
+use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::avpacket::AVPacket;
 
 impl Image {
@@ -33,12 +36,15 @@ impl Image {
             None => bail!("No video stream found"),
         };
 
-        let packet = Self::decode(&codec_context, &mut format)?;
+        let (packet, frame) = Self::decode(&codec_context, &mut format)?;
 
         let image = Image {
             decoder: Some(codec_context),
-            packet: Some(packet),
             encoder: None,
+            inner: ImageInner {
+                packet: Some(InnerLock::new(packet)),
+                frame: Some(InnerLock::new(frame)),
+            },
             utils: ImageUtil {
                 sws: None,
                 format: Some(format),
@@ -48,13 +54,12 @@ impl Image {
         Ok(image)
     }
 
-    fn decode(codec: &AVCodecContext, format: &mut AVFormatContext) -> Result<AVPacket> {
-        let mut vec = format
+    fn decode(codec: &AVCodecContext, format: &mut AVFormatContext) -> Result<(AVPacket, AVFrame)> {
+        let mut vec: Vec<Result<(AVPacket, AVFrame)>> = format
             .frames(AVMediaType::VIDEO)?
             .map(|mut packet| {
                 codec.send_packet(&mut packet)?;
-                codec.receive_frame()?;
-                Ok(packet)
+                Ok((packet, codec.receive_frame()?))
             })
             .collect::<Vec<_>>();
 
@@ -62,8 +67,9 @@ impl Image {
             warn!("More than one frame found, using the first one");
         }
 
-        let packet: Result<AVPacket> = vec.remove(0);
+        let packet = vec.remove(0)?;
 
-        Ok(packet?)
+
+        Ok((packet.0, packet.1.clone()))
     }
 }

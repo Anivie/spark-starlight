@@ -1,7 +1,7 @@
-use std::mem::ManuallyDrop;
 use iter::frame_iter::PixelData;
+use std::mem::ManuallyDrop;
 
-pub mod open_frame;
+pub mod avframe;
 pub mod frame_info;
 mod iter;
 mod operator;

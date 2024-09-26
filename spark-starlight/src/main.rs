@@ -1,14 +1,14 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
 extern crate core;
 
-use spark_inference::engine::inference_engine::InferenceEngine;
 use anyhow::Result;
 use ndarray::parallel::prelude::*;
 use ndarray::s;
+use spark_inference::engine::inference_engine::InferenceEngine;
 use spark_inference::engine::run::{InferenceResult, ModelInference};
-use spark_media::Image;
 use spark_media::image::decoder::size::ResizeImage;
 use spark_media::image::util::extract::ExtraToTensor;
+use spark_media::Image;
 
 fn main() -> Result<()> {
     let mut image = {

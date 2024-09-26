@@ -1,7 +1,7 @@
 use num_enum::TryFromPrimitive;
 
 #[repr(i32)]
-#[derive(TryFromPrimitive, Copy, Clone)]
+#[derive(TryFromPrimitive, Copy, Clone, PartialEq)]
 pub enum AVPixelFormat {
      AvPixFmtNone = -1 ,
      AvPixFmtYuv420p = 0 ,

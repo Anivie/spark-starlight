@@ -1,7 +1,7 @@
+use crate::Image;
 use anyhow::Result;
 use rayon::prelude::*;
 use std::ops::Deref;
-use crate::Image;
 
 struct SafeVecPtr(*mut f32);
 impl Deref for SafeVecPtr {
@@ -30,7 +30,7 @@ impl ExtraToTensor for Image {
         let tensor_ptr = SafeVecPtr(tensor.as_mut_ptr());
 
         self
-            .frame()
+            .frame()?
             .get_raw_data(0)
             .iter()
             .enumerate()

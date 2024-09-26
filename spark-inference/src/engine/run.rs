@@ -1,12 +1,12 @@
-use std::cmp::Ordering;
-use crate::engine::inference_engine::InferenceEngine;
 use crate::engine::entity::box_point::Box;
+use crate::engine::inference_engine::InferenceEngine;
 use anyhow::Result;
 use cudarc::driver::{CudaDevice, DevicePtr};
 use log::debug;
 use ndarray::{s, Array1, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
 use ort::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType, TensorRefMut};
 use rayon::prelude::*;
+use std::cmp::Ordering;
 
 pub trait ModelInference {
     fn inference(&self, tensor: &[f32], confidence: f32, probability_mask: f32) -> Result<Vec<InferenceResult>>;

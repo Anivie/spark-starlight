@@ -1,8 +1,8 @@
+use crate::engine::IS_INIT;
+use anyhow::Result;
+use ort::{CUDAExecutionProvider, Session};
 use std::path::Path;
 use std::sync::atomic::Ordering;
-use ort::{CUDAExecutionProvider, Session};
-use anyhow::Result;
-use crate::engine::IS_INIT;
 
 pub struct InferenceEngine {
     pub(crate) session: Session

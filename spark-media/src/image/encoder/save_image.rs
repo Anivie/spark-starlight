@@ -1,52 +1,39 @@
-use std::path::Path;
 use crate::Image;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avstream::AVCodecID;
 use spark_ffmpeg::pixformat::AVPixelFormat;
+use std::ops::Deref;
+use std::path::Path;
 
 impl Image {
     pub fn new_with_empty(size: (i32, i32), pixel_format: AVPixelFormat, codec_id: AVCodecID) -> Result<Self> {
         let codec = AVCodec::new_encoder_with_id(codec_id)?;
 
-        let codec_context = AVCodecContext::new_save(
-            &codec, size, pixel_format, 400000
-        )?;
+        let codec_context = AVCodecContext::new(size, pixel_format, &codec, None)?;
 
         Ok(Image {
-            packet: None,
             decoder: None,
             encoder: Some(codec_context),
             utils: Default::default(),
+            inner: Default::default(),
         })
     }
 
-    pub fn replace_data(&mut self, data: &[u8]) -> Result<()> {
-        // self.available_codec().replace_data(data);
-
-        Ok(())
-    }
-
-    pub fn fill_data(&mut self, data: &[u8]) -> Result<()> {
-        // self.available_codec().fill_data(&data);
-        self.available_codec().send_frame(None)?;
-
-        let av_packet = self.available_codec().receive_packet()?;
-        self.packet = Some(av_packet);
-
-        Ok(())
-    }
-
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        match &self.packet {
-            Some(packet) => packet.save(path)?,
+        match &self.inner.packet {
+            Some(packet) => packet.write().save(path)?,
             None => {
-                self.available_codec().send_frame(None)?;
+                self.available_codec().send_frame(self.frame()?.deref())?;
 
-                let mut packet = self.available_codec().receive_packet()?;
+                let mut packet = self.encoder
+                    .as_ref()
+                    .ok_or(anyhow!("Encoder not ready!"))?
+                    .receive_packet()?;
+
                 packet.save(path)?;
 
-                self.packet = Some(packet);
+                self.inner.replace_packet(packet);
             }
         }
 

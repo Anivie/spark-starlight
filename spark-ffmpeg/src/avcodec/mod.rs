@@ -1,12 +1,8 @@
-use crate::avframe::AVFrame;
-
-pub mod codec_alloc;
+pub mod codec;
 mod codec_util;
 
 wrap!(
-    AVCodecContext {
-        inner_frame: AVFrame,
-    } drop2 avcodec_free_context,
+    AVCodecContext drop2 avcodec_free_context,
     AVCodec
 );
 
