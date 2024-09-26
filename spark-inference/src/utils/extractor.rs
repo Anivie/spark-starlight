@@ -1,7 +1,7 @@
-use crate::Image;
 use anyhow::Result;
 use rayon::prelude::*;
 use std::ops::Deref;
+use spark_media::Image;
 
 struct SafeVecPtr(*mut f32);
 impl Deref for SafeVecPtr {
@@ -37,15 +37,15 @@ impl ExtraToTensor for Image {
             .par_bridge()
             .for_each(|(index, &value)| {
                 if index % 3 == 0 {
-                    unsafe { *tensor_ptr.wrapping_add(index / 3) = value as f32 / 255.; }
+                    unsafe { *tensor_ptr.add(index / 3) = value as f32 / 255.; }
                 }
 
                 if index % 3 == 1 {
-                    unsafe { *tensor_ptr.wrapping_add(size / 3 + index / 3) = value as f32 / 255.; }
+                    unsafe { *tensor_ptr.add(size / 3 + index / 3) = value as f32 / 255.; }
                 }
 
                 if index % 3 == 2 {
-                    unsafe { *tensor_ptr.wrapping_add(size * 2 / 3 + index / 3) = value as f32 / 255.; }
+                    unsafe { *tensor_ptr.add(size * 2 / 3 + index / 3) = value as f32 / 255.; }
                 }
             });
 

@@ -69,6 +69,6 @@ impl Image {
         let packet = vec.remove(0)?;
 
 
-        Ok((packet.0, packet.1.clone()))
+        Ok((packet.0, packet.1))
     }
 }

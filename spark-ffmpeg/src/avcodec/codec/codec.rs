@@ -24,6 +24,7 @@ impl AVCodecContext {
 
     pub fn receive_frame(&self) -> Result<AVFrame> {
         let frame = AVFrame::new()?;
+
         ffmpeg! {
             avcodec_receive_frame(self.inner, frame.inner)
         }

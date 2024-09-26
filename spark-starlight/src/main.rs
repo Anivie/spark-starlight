@@ -5,33 +5,17 @@ use anyhow::Result;
 use ndarray::s;
 use spark_inference::engine::inference_engine::InferenceEngine;
 use spark_inference::engine::run::{InferenceResult, ModelInference};
+use spark_inference::utils::extractor::ExtraToTensor;
 use spark_media::image::decoder::size::ResizeImage;
-use spark_media::image::util::extract::ExtraToTensor;
 use spark_media::Image;
 
 fn main() -> Result<()> {
-    let mut image = {
-        let mut image = Image::open_file("/home/spark-starlight/data/image/a.png")?;
-        image.resize_to((640, 640))?;
-        image
-    };
-    image.save("./data/out/a.png")?;
-
-    /*let mut nmg = Image::new_with_empty(image.get_size(), image.pixel_format(), image.codec_id())?;
-    nmg.replace_data(image.raw_data().as_slice())?;
-    nmg.save("./data/out/n.png")?;*/
-
-    Ok(())
-}
-
-fn mains() -> Result<()> {
     let engine = InferenceEngine::new("./data/model/best.onnx")?;
     let mut image = {
         let mut image = Image::open_file("/home/spark-starlight/data/image/a.png")?;
         image.resize_to((640, 640))?;
         image
     };
-    image.save("./data/out/a.png")?;
 
     let tensor = image.extra_standard_image_to_tensor()?;
     let mask = engine.inference(tensor.as_slice(), 0.8, 0.6)?;

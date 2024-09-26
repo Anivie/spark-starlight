@@ -41,6 +41,7 @@ impl ResizeImage for Image {
         context.send_frame(&scaled_frame)?;
         let packet = context.receive_packet()?;
         self.inner.replace_packet(packet);
+        self.inner.replace_frame(scaled_frame);
         self.encoder = Some(context);
 
         Ok(())

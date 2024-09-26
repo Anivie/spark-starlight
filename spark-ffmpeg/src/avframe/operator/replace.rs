@@ -22,6 +22,8 @@ impl AVFrame {
         }
     }
 
+    /// Fill the frame with data.
+    /// Data format: RGB|RGB|RGB|...
     pub fn fill_data(&mut self, data: &[u8], pix_fmt: AVPixelFormat) {
         let width = if pix_fmt == AVPixelFormat::AvPixFmtGray8 {
             unsafe { *self.inner }.width
