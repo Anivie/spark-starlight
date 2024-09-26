@@ -2,46 +2,48 @@
 extern crate core;
 
 use anyhow::Result;
-use ndarray::s;
 use spark_inference::engine::inference_engine::InferenceEngine;
 use spark_inference::engine::run::{InferenceResult, ModelInference};
 use spark_inference::utils::extractor::ExtraToTensor;
+use spark_inference::utils::masks::ApplyMask;
 use spark_media::image::decoder::size::ResizeImage;
-use spark_media::Image;
+use spark_media::{Image, RGB};
 
 fn main() -> Result<()> {
     let engine = InferenceEngine::new("./data/model/best.onnx")?;
-    let mut image = {
+    let image = {
         let mut image = Image::open_file("/home/spark-starlight/data/image/a.png")?;
         image.resize_to((640, 640))?;
         image
     };
 
     let tensor = image.extra_standard_image_to_tensor()?;
-    let mask = engine.inference(tensor.as_slice(), 0.8, 0.6)?;
+    let mask = engine.inference(tensor.as_slice(), 0.5, 0.6)?;
 
-    for (index, InferenceResult { boxes, classify, mask, score }) in mask.iter().enumerate() {
-        // let frame = image.resize((640, 640), AvPixFmtRgb24)?;
-        // frame.layering_mask(0, mask)?;
-        // let mut image = Image::from_data((640, 640), AvPixFmtRgb24, 61)?;
-        // let packet = image.fill_data(frame.get_raw_data(0).as_mut_slice())?;
-        println!("Index: {}, Boxes: {:?}, Classify: {:?}, Mask: {:?}, Score: {:?}", index, boxes, classify, mask, score);
+    for (index, InferenceResult { boxed: boxes, classify, mask, score }) in mask.iter().enumerate() {
+        println!("Index: {}, Boxes: {:?}, Classify: {:?}, Mask: {:?}, Score: {:?}", index, boxes, classify, mask.len(), score);
 
-        let (mask_height, mask_width, region_height, region_width) = {
-            (mask.shape()[0], mask.shape()[1], mask.shape()[0] / 3, mask.shape()[1] / 3)
+        let mut n_img = image.clone();
+        n_img.layering_mask(0, &mask, RGB(75, 0, 0))?;
+
+        let (mask_width, region_height, region_width) = {
+            (640, mask.len() / 640 / 3, mask.len() / 640 / 3)
         };
 
         for i in 0..3 {
             for j in 0..3 {
-                let start_row = i * region_height;
-                let end_row = if i == 2 { mask_height } else { (i + 1) * region_height };
-                let start_col = j * region_width;
-                let end_col = if j == 2 { mask_width } else { (j + 1) * region_width };
+                let (start_index, end_index) = {
+                    let start_index = i * region_height * mask_width + j * region_width;
+                    let end_index = start_index + region_height * mask_width + region_width;
+                    (start_index, end_index)
+                };
 
-                let region = mask.slice(s![start_row..end_row, start_col..end_col]);
-                let covered_pixels = region.iter().filter(|&&pixel| pixel > 0f32).count();
-                let total_pixels = region.len();
-                let coverage = covered_pixels as f64 / total_pixels as f64;
+                let region = &mask[start_index..end_index];
+                let covered_pixels = region
+                    .iter()
+                    .filter(|pixel| *pixel.as_ref())
+                    .count();
+                let coverage = covered_pixels as f64 / region.len() as f64;
 
                 println!("Region ({}, {}): Coverage = {:.2}%", i, j, coverage * 100.0);
             }

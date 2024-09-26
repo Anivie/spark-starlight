@@ -1,3 +1,4 @@
+use bitvec::prelude::*;
 use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::InferenceEngine;
 use anyhow::Result;
@@ -14,9 +15,9 @@ pub trait ModelInference {
 
 #[derive(Debug, Clone)]
 pub struct InferenceResult {
-    pub boxes: Box,
+    pub boxed: Box,
     pub classify: Array1<f32>,
-    pub mask: Array2<f32>,
+    pub mask: BitVec,
     pub score: f32,
 }
 
@@ -77,31 +78,28 @@ impl ModelInference for InferenceEngine {
                     let mask = feature_mask.dot(&output_second);
                     let mask = mask.to_shape((160, 160)).unwrap();
                     let mask = bilinear_interpolate(&mask, (640, 640));
-                    let mut mask = sigmoid(mask.into_owned());
+                    let mask = sigmoid(mask.into_owned());
                     let x1 = x1 as usize;
                     let y1 = y1 as usize;
                     let x2 = x2 as usize;
                     let y2 = y2 as usize;
 
                     mask
-                        .indexed_iter_mut()
-                        .par_bridge()
-                        .for_each(|((y, x), value)| {
-                            *value = if (y1..y2).contains(&y) && (x1..x2).contains(&x) && *value > probability_mask {
-                                100.
-                            } else {
-                                0.
-                            }
-                        });
-                    mask
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            let y = index / 640;
+                            let x = index % 640;
+                            (y1..y2).contains(&y) && (x1..x2).contains(&x) && *value > probability_mask
+                        })
+                        .collect::<BitVec>()
                 };
 
                 let boxed = Box { x1, y1, x2, y2 };
                 let classify = box_output.slice(s![4 .. box_output.len() - 32]);
                 let classify = classify.to_owned();
 
-
-                InferenceResult { boxes: boxed, classify, mask, score }
+                InferenceResult { boxed, classify, mask, score }
             })
             .collect::<Vec<_>>();
 

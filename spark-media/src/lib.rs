@@ -11,6 +11,7 @@ pub mod image;
 
 pub use image::image::Image;
 pub use spark_ffmpeg::pixformat::AVPixelFormat;
+pub use spark_ffmpeg::pixel::pixel_formater::RGB;
 
 static CODEC: LazyLock<RwLock<HashMap<AVCodecID, AVCodec>>> = LazyLock::new(|| {
     RwLock::new(HashMap::new())

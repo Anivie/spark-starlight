@@ -1,6 +1,6 @@
 use crate::Image;
 use anyhow::{anyhow, Result};
-use parking_lot::RwLockReadGuard;
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use spark_ffmpeg::avcodec::AVCodecContext;
 use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::avstream::AVCodecID;
@@ -16,6 +16,11 @@ impl Image {
     pub fn frame(&self) -> Result<RwLockReadGuard<AVFrame>> {
         let frame = self.inner.frame.as_ref().ok_or(anyhow!("No frame are available"))?;
         Ok(frame.read())
+    }
+
+    pub fn frame_mut(&self) -> Result<RwLockWriteGuard<AVFrame>> {
+        let frame = self.inner.frame.as_ref().ok_or(anyhow!("No frame are available"))?;
+        Ok(frame.write())
     }
 
     pub fn pixel_format(&self) -> AVPixelFormat {

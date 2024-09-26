@@ -7,17 +7,14 @@ pub(crate) struct InnerLock<T>(RwLock<T>);
 impl<T: Clone> Clone for InnerLock<T> {
     fn clone(&self) -> Self {
         let guard = self.0.write();
-        let new = InnerLock(RwLock::new(guard.clone()));
-        drop(guard);
-        new
+        InnerLock(RwLock::new(guard.clone()))
     }
 }
 
 impl<T: Debug> Debug for InnerLock<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let guard = self.0.read();
-        let inner = &*guard;
-        inner.fmt(f)
+        guard.fmt(f)
     }
 }
 

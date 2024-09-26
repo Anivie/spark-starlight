@@ -8,6 +8,8 @@ log = "0.4.22"
 cudarc = { version = "0.12.0", features = ["cuda-12050", "cudnn"] }
 
 rayon = "1.10.0"
+bitvec = "1.0.1"
+
 anyhow = "1.0.86"
 image = "0.25.2"
 

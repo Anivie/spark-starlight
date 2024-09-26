@@ -33,7 +33,7 @@ impl AVFrame {
         let height = unsafe { *self.inner }.height;
         let line_size = self.linesize[0];
 
-        if width % 2 == 0 && height % 2 == 0 {
+        if width == line_size {
             unsafe {
                 self.data[0].copy_from_nonoverlapping(data.as_ptr(), (width * height) as usize);
             }
