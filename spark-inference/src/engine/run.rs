@@ -1,7 +1,7 @@
-use bitvec::prelude::*;
 use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::InferenceEngine;
 use anyhow::Result;
+use bitvec::prelude::*;
 use cudarc::driver::{CudaDevice, DevicePtr};
 use log::debug;
 use ndarray::{s, Array1, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
@@ -22,7 +22,7 @@ pub struct InferenceResult {
 }
 
 impl ModelInference for InferenceEngine {
-    fn inference(&self, tensor: &[f32], confidence: f32, probability_mask: f32) -> Result<Vec<InferenceResult>> {
+    fn inference(&self, tensor: &[f32], conf_thres: f32, iou_thres: f32) -> Result<Vec<InferenceResult>> {
         let tensor = {
             let device = CudaDevice::new(0)?;
             let device_data = device.htod_sync_copy(tensor)?;
@@ -57,7 +57,7 @@ impl ModelInference for InferenceEngine {
                 box_output
                     .slice(s![4 .. box_output.len() - 32])
                     .iter()
-                    .any(|&score| score > confidence)
+                    .any(|&score| score > conf_thres)
             })
             .map(|box_output| {
                 let score = box_output.slice(s![4 .. box_output.len() - 32]);
@@ -90,7 +90,7 @@ impl ModelInference for InferenceEngine {
                         .map(|(index, value)| {
                             let y = index / 640;
                             let x = index % 640;
-                            (y1..y2).contains(&y) && (x1..x2).contains(&x) && *value > probability_mask
+                            (y1..y2).contains(&y) && (x1..x2).contains(&x) && *value > iou_thres
                         })
                         .collect::<BitVec>()
                 };

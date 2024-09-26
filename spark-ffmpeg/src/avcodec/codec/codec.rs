@@ -5,7 +5,7 @@ use crate::ffi::{avcodec_receive_frame, avcodec_receive_packet, avcodec_send_fra
 use anyhow::Result;
 
 impl AVCodecContext {
-    pub fn send_packet(&self, packet: &mut AVPacket) -> Result<()> {
+    pub fn send_packet(&self, packet: &AVPacket) -> Result<()> {
         ffmpeg! {
             avcodec_send_packet(self.inner, packet.inner)
         }

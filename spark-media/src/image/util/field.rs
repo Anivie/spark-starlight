@@ -13,6 +13,41 @@ impl Image {
             .unwrap_or_else(|| self.decoder.as_ref().expect("At least one codec must be available"))
     }
 
+    /*pub(crate) fn try_encoder(&mut self) -> Result<&AVCodecContext> {
+        let encoder = match self.encoder.as_ref() {
+            Some(some) => some,
+            None => {
+                let decoder = self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist."))?;
+                let encoder = AVCodec::new_encoder_with_id(decoder.id())?;
+                let frame = self.inner.frame.as_ref().ok_or(anyhow!("Init encoder need frame exist."))?;
+
+                let context = AVCodecContext::from_frame(&encoder, frame.read().deref(), None)?;
+
+                self.encoder = Some(context);
+                self.encoder.as_ref().unwrap()
+            }
+        };
+
+        Ok(encoder)
+    }
+
+    pub(crate) fn try_decoder(&mut self) -> Result<&AVCodecContext> {
+        let decoder = match self.decoder.as_ref() {
+            Some(some) => some,
+            None => {
+                let encoder = self.encoder.as_ref().ok_or(anyhow!("Init decoder need encoder exist."))?;
+                let decoder = AVCodec::new_decoder_with_id(encoder.id())?;
+                let frame = self.inner.frame.as_ref().ok_or(anyhow!("Init encoder need frame exist."))?;
+
+                let context = AVCodecContext::from_frame(&decoder, frame.read().deref(), None)?;
+                self.decoder = Some(context);
+                self.decoder.as_ref().unwrap()
+            }
+        };
+
+        Ok(decoder)
+    }*/
+
     pub fn frame(&self) -> Result<RwLockReadGuard<AVFrame>> {
         let frame = self.inner.frame.as_ref().ok_or(anyhow!("No frame are available"))?;
         Ok(frame.read())

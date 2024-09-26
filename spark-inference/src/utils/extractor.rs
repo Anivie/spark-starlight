@@ -1,7 +1,7 @@
+use crate::utils::ptr_wrapper::SafeVecPtr;
 use anyhow::Result;
 use rayon::prelude::*;
 use spark_media::Image;
-use crate::utils::SafeVecPtr;
 
 pub trait ExtraToTensor {
     fn extra_standard_image_to_tensor(&self) -> Result<Vec<f32>>;
@@ -16,7 +16,7 @@ impl ExtraToTensor for Image {
             unsafe { vec.set_len(size); }
             vec
         };
-        let tensor_ptr = SafeVecPtr(tensor.as_mut_ptr());
+        let tensor_ptr = SafeVecPtr::new(tensor.as_mut_ptr());
 
         self
             .frame()?
