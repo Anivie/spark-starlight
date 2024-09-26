@@ -2,7 +2,6 @@
 extern crate core;
 
 use anyhow::Result;
-use ndarray::parallel::prelude::*;
 use ndarray::s;
 use spark_inference::engine::inference_engine::InferenceEngine;
 use spark_inference::engine::run::{InferenceResult, ModelInference};

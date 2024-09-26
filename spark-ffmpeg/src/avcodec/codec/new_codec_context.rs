@@ -1,10 +1,9 @@
-use crate::avcodec::{AVCodec, AVCodecContext, AVCodecContextRaw};
+use crate::avcodec::{AVCodec, AVCodecContext};
 use crate::avframe::AVFrame;
-use crate::avpacket::AVPacket;
-use crate::ffi::{av_image_get_buffer_size, avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, avcodec_receive_frame, avcodec_receive_packet, avcodec_send_frame, avcodec_send_packet, AVCodecParameters, AVDictionary, AVRational, AVStream};
 use crate::pixformat::AVPixelFormat;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::ptr::null_mut;
+use crate::ffi::{avcodec_alloc_context3, avcodec_open2, AVDictionary, AVRational, AVStream};
 
 impl AVCodecContext {
     pub fn from_stream(codec: &AVCodec, stream: &AVStream, av_dictionary: Option<AVDictionary>) -> Result<Self> {

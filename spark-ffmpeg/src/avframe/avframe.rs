@@ -2,7 +2,6 @@ use crate::avframe::AVFrame;
 use crate::ffi::{av_frame_alloc, av_image_alloc, av_image_fill_arrays};
 use crate::pixformat::AVPixelFormat;
 use anyhow::{anyhow, Result};
-use std::fmt::format;
 
 impl AVFrame {
     pub fn new() -> Result<Self> {

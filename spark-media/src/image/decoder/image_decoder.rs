@@ -3,7 +3,6 @@ use crate::image::util::inner_lock::InnerLock;
 use crate::{Image, CODEC};
 use anyhow::{bail, Result};
 use log::warn;
-use parking_lot::RwLock;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avformat::avformat_context::OpenFileToAVFormatContext;
 use spark_ffmpeg::avformat::{AVFormatContext, AVMediaType};

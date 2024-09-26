@@ -26,7 +26,7 @@ impl Image {
             None => {
                 self.available_codec().send_frame(self.frame()?.deref())?;
 
-                let mut packet = self.encoder
+                let packet = self.encoder
                     .as_ref()
                     .ok_or(anyhow!("Encoder not ready!"))?
                     .receive_packet()?;
