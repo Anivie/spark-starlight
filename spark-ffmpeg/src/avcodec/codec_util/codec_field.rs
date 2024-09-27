@@ -9,6 +9,11 @@ impl AVCodecContext {
         (context.width, context.height)
     }
 
+    pub fn set_size(&mut self, size: (i32, i32)) {
+        self.width = size.0;
+        self.height = size.1;
+    }
+
     pub fn buffer_size(&self, format: AVPixelFormat) -> anyhow::Result<i32> {
         let size = unsafe {
             av_image_get_buffer_size(

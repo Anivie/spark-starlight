@@ -31,6 +31,18 @@ impl ResizeImage for Image {
             scaled_frame
         };
 
+        self.encoder
+            .as_mut()
+            .map(|x| {
+                x.set_size(size);
+            });
+
+        self.decoder
+            .as_mut()
+            .map(|x| {
+                x.set_size(size);
+            });
+
         sws.scale_image(&self.inner.frame, &scaled_frame)?;
         self.inner.frame = scaled_frame;
 

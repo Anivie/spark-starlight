@@ -24,16 +24,15 @@ impl ExtraToTensor for Image {
             .enumerate()
             .par_bridge()
             .for_each(|(index, &value)| {
-                if index % 3 == 0 {
-                    unsafe { tensor_ptr.add(index / 3).write(value as f32 / 255.) }
-                }
+                let index = match index % 3 {
+                    0 => index / 3,
+                    1 => size / 3 + index / 3,
+                    2 => size * 2 / 3 + index / 3,
+                    _ => panic!("Invalid index occur when extract image to tensor."),
+                };
 
-                if index % 3 == 1 {
-                    unsafe { tensor_ptr.add(size / 3 + index / 3).write(value as f32 / 255.); }
-                }
-
-                if index % 3 == 2 {
-                    unsafe { tensor_ptr.add(size * 2 / 3 + index / 3).write(value as f32 / 255.); }
+                unsafe {
+                    tensor_ptr.add(index).write(value as f32 / 255.);
                 }
             });
 

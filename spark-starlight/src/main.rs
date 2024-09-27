@@ -10,7 +10,7 @@ use spark_media::{Image, RGB};
 
 fn main() -> Result<()> {
     let engine = InferenceEngine::new("./data/model/best.onnx")?;
-    let image = {
+    let mut image = {
         let mut image = Image::open_file("./data/image/a.png")?;
         image.resize_to((640, 640))?;
         image
@@ -19,7 +19,6 @@ fn main() -> Result<()> {
     let tensor = image.extra_standard_image_to_tensor()?;
     let mask = engine.inference(tensor.as_slice(), 0.25, 0.45)?;
 
-    let mut n_img = image.clone();
     for InferenceResult { boxed: boxes, classify, mask, score } in mask.iter() {
         println!("Boxes: {:?}, Classify: {:?}, Mask: {:?}, Score: {:?}", boxes, classify, mask.len(), score);
         let best = classify.iter()
@@ -28,7 +27,7 @@ fn main() -> Result<()> {
             .map(|(index, _)| index)
             .unwrap();
 
-        n_img.layering_mask(
+        image.layering_mask(
             &mask,
             if best == 0 {
                 RGB(0, 25, 25)
@@ -61,7 +60,7 @@ fn main() -> Result<()> {
         }*/
     }
 
-    n_img.save(&format!("./data/out/{}.png", "best"))?;
+    image.save(&format!("./data/out/{}.png", "best"))?;
 
     Ok(())
 }
