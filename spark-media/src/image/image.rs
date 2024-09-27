@@ -15,11 +15,11 @@ pub struct Image {
 impl Clone for Image {
     fn clone(&self) -> Self {
         Self {
+            utils: Default::default(),
             inner: ImageInner {
                 packet: None,
                 frame: self.inner.frame.deep_clone().unwrap(),
             },
-            utils: Default::default(),
             decoder: self.decoder.as_ref().map(|x| x.deep_clone()).transpose().unwrap(),
             encoder: self.encoder.as_ref().map(|x| x.deep_clone()).transpose().unwrap(),
         }

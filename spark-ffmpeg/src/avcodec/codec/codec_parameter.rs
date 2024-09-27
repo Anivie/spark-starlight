@@ -20,7 +20,7 @@ impl AVCodecParameters {
     }
 
     pub(crate) fn from_context(avcodec_context: &AVCodecContext) -> Result<Self> {
-        let mut parameters = AVCodecParameters::new()?;
+        let parameters = AVCodecParameters::new()?;
         ffmpeg! {
             avcodec_parameters_from_context(parameters.inner, avcodec_context.inner)
         }

@@ -71,14 +71,14 @@ impl ResizeImage for Image {
 
 impl Image {
     pub fn get_width(&self) -> i32 {
-        self.available_codec().size().0
+        self.inner.frame.get_width()
     }
 
     pub fn get_height(&self) -> i32 {
-        self.available_codec().size().1
+        self.inner.frame.get_height()
     }
 
     pub fn get_size(&self) -> (i32, i32) {
-        self.available_codec().size()
+        (self.get_width(), self.get_height())
     }
 }

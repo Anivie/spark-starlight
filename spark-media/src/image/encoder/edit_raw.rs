@@ -9,7 +9,10 @@ impl Image {
     }
 
     pub fn fill_data(&mut self, data: &[u8]) -> Result<()> {
-        &self.inner.frame.fill_data(data, self.available_codec().pixel_format());
+        let pixel_format = self.available_codec().pixel_format();
+        let frame = &mut self.inner.frame;
+        frame.fill_data(data, pixel_format);
+
         Ok(())
     }
 }

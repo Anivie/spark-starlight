@@ -25,7 +25,8 @@ impl ApplyMask for Image {
 
                 match (index % 3, apply_color.0 > 0, apply_color.1 > 0, apply_color.2 > 0) {
                     (0, true, _, _) => unsafe {
-                        let after = (*ptr.add(index)).saturating_add(apply_color.0);
+                        let deref = *ptr.add(index);
+                        let after = (deref).saturating_add(apply_color.0);
                         ptr.add(index).write(after);
                     }
                     (1, _, true, _) => unsafe {

@@ -11,7 +11,7 @@ impl Image {
             .unwrap_or_else(|| self.decoder.as_ref().expect("At least one codec must be available"))
     }
 
-    pub(crate) fn try_encoder(&mut self) -> Result<AVCodecContext> {
+    pub(crate) fn try_encoder(&mut self) -> Result<ManuallyDrop<AVCodecContext>> {
         if self.encoder.is_none() {
             let decoder = self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist."))?;
             let encoder = AVCodec::new_encoder_with_id(decoder.id())?;
@@ -20,10 +20,10 @@ impl Image {
             self.encoder = Some(context);
         }
 
-        Ok(self.encoder.as_ref().unwrap().clone())
+        Ok(ManuallyDrop::new(self.encoder.as_ref().unwrap().clone()))
     }
 
-    pub(crate) fn try_decoder(&mut self) -> Result<AVCodecContext> {
+    pub(crate) fn try_decoder(&mut self) -> Result<ManuallyDrop<AVCodecContext>> {
         if self.decoder.is_none() {
             let encoder = self.encoder.as_ref().ok_or(anyhow!("Init decoder need encoder exist."))?;
             let decoder = AVCodec::new_decoder_with_id(encoder.id())?;
@@ -32,7 +32,7 @@ impl Image {
             self.decoder = Some(context);
         }
 
-        Ok(self.decoder.as_ref().unwrap().clone())
+        Ok(ManuallyDrop::new(self.decoder.as_ref().unwrap().clone()))
     }
 
     pub fn pixel_format(&self) -> AVPixelFormat {
