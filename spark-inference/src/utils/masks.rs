@@ -6,16 +6,15 @@ use spark_ffmpeg::pixel::pixel_formater::RGB;
 use spark_media::Image;
 
 pub trait ApplyMask {
-    fn layering_mask(&mut self, dim_index: usize, mask: &BitVec, apply_color: RGB) -> Result<()>;
+    fn layering_mask(&mut self, mask: &BitVec, apply_color: RGB) -> Result<()>;
 }
 
 impl ApplyMask for Image {
-    fn layering_mask(&mut self, dim_index: usize, mask: &BitVec, apply_color: RGB) -> Result<()> {
-        let frame = self.frame_mut()?;
-        let mut data = frame.get_raw_data(dim_index);
+    fn layering_mask(&mut self, mask: &BitVec, apply_color: RGB) -> Result<()> {
+        let mut data = self.raw_data()?;
         let ptr = SafeVecPtr::new(data.as_mut_ptr());
 
-        (0 .. (frame.get_width() * frame.get_height() * 3) as usize)
+        (0 .. (self.get_width() * self.get_height() * 3) as usize)
             .into_par_iter()
             .for_each(|index| {
                 if !unsafe {
@@ -40,9 +39,6 @@ impl ApplyMask for Image {
                     _ => {}
                 }
             });
-
-        drop(frame);
-        self.refresh_packet()?;
 
         Ok(())
     }

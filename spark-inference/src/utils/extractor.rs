@@ -19,8 +19,7 @@ impl ExtraToTensor for Image {
         let tensor_ptr = SafeVecPtr::new(tensor.as_mut_ptr());
 
         self
-            .frame()?
-            .get_raw_data(0)
+            .raw_data()?
             .iter()
             .enumerate()
             .par_bridge()

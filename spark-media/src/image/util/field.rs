@@ -1,8 +1,6 @@
 use crate::Image;
 use anyhow::{anyhow, Result};
-use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
-use spark_ffmpeg::avcodec::AVCodecContext;
-use spark_ffmpeg::avframe::AVFrame;
+use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avstream::AVCodecID;
 use spark_ffmpeg::pixformat::AVPixelFormat;
 use std::mem::ManuallyDrop;
@@ -13,49 +11,28 @@ impl Image {
             .unwrap_or_else(|| self.decoder.as_ref().expect("At least one codec must be available"))
     }
 
-    /*pub(crate) fn try_encoder(&mut self) -> Result<&AVCodecContext> {
-        let encoder = match self.encoder.as_ref() {
-            Some(some) => some,
-            None => {
-                let decoder = self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist."))?;
-                let encoder = AVCodec::new_encoder_with_id(decoder.id())?;
-                let frame = self.inner.frame.as_ref().ok_or(anyhow!("Init encoder need frame exist."))?;
+    pub(crate) fn try_encoder(&mut self) -> Result<AVCodecContext> {
+        if self.encoder.is_none() {
+            let decoder = self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist."))?;
+            let encoder = AVCodec::new_encoder_with_id(decoder.id())?;
 
-                let context = AVCodecContext::from_frame(&encoder, frame.read().deref(), None)?;
+            let context = AVCodecContext::from_frame(&encoder, &self.inner.frame, None)?;
+            self.encoder = Some(context);
+        }
 
-                self.encoder = Some(context);
-                self.encoder.as_ref().unwrap()
-            }
-        };
-
-        Ok(encoder)
+        Ok(self.encoder.as_ref().unwrap().clone())
     }
 
-    pub(crate) fn try_decoder(&mut self) -> Result<&AVCodecContext> {
-        let decoder = match self.decoder.as_ref() {
-            Some(some) => some,
-            None => {
-                let encoder = self.encoder.as_ref().ok_or(anyhow!("Init decoder need encoder exist."))?;
-                let decoder = AVCodec::new_decoder_with_id(encoder.id())?;
-                let frame = self.inner.frame.as_ref().ok_or(anyhow!("Init encoder need frame exist."))?;
+    pub(crate) fn try_decoder(&mut self) -> Result<AVCodecContext> {
+        if self.decoder.is_none() {
+            let encoder = self.encoder.as_ref().ok_or(anyhow!("Init decoder need encoder exist."))?;
+            let decoder = AVCodec::new_decoder_with_id(encoder.id())?;
 
-                let context = AVCodecContext::from_frame(&decoder, frame.read().deref(), None)?;
-                self.decoder = Some(context);
-                self.decoder.as_ref().unwrap()
-            }
-        };
+            let context = AVCodecContext::from_frame(&decoder, &self.inner.frame, None)?;
+            self.decoder = Some(context);
+        }
 
-        Ok(decoder)
-    }*/
-
-    pub fn frame(&self) -> Result<RwLockReadGuard<AVFrame>> {
-        let frame = self.inner.frame.as_ref().ok_or(anyhow!("No frame are available"))?;
-        Ok(frame.read())
-    }
-
-    pub fn frame_mut(&self) -> Result<RwLockWriteGuard<AVFrame>> {
-        let frame = self.inner.frame.as_ref().ok_or(anyhow!("No frame are available"))?;
-        Ok(frame.write())
+        Ok(self.decoder.as_ref().unwrap().clone())
     }
 
     pub fn pixel_format(&self) -> AVPixelFormat {
@@ -67,6 +44,6 @@ impl Image {
     }
 
     pub fn raw_data(&self) -> Result<ManuallyDrop<Vec<u8>>> {
-        Ok(self.frame()?.get_raw_data(0))
+        Ok(self.inner.frame.get_raw_data(0))
     }
 }

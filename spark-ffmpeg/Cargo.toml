@@ -7,6 +7,8 @@ edition = "2021"
 bindgen = "0.70.1"
 
 [dependencies]
+spark-proc_macro = { path = "../spark-proc_macro" }
+
 anyhow = "1.0.86"
 paste = "1.0.15"
 num_enum = "0.7.3"

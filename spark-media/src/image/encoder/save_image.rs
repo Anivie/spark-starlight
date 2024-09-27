@@ -1,9 +1,8 @@
 use crate::Image;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avstream::AVCodecID;
 use spark_ffmpeg::pixformat::AVPixelFormat;
-use std::ops::Deref;
 use std::path::Path;
 
 impl Image {
@@ -21,21 +20,13 @@ impl Image {
     }
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        match &self.inner.packet {
-            Some(packet) => packet.write().save(path)?,
-            None => {
-                self.available_codec().send_frame(self.frame()?.deref())?;
+        let encoder = self.try_encoder()?;
+        encoder.send_frame(&self.inner.frame)?;
 
-                let packet = self.encoder
-                    .as_ref()
-                    .ok_or(anyhow!("Encoder not ready!"))?
-                    .receive_packet()?;
+        let packet = encoder.receive_packet()?;
+        packet.save(path)?;
 
-                packet.save(path)?;
-
-                self.inner.replace_packet(packet);
-            }
-        }
+        self.inner.packet = Some(packet);
 
         Ok(())
     }

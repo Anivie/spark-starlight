@@ -1,17 +1,15 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
-extern crate core;
 
 use anyhow::Result;
 use bitvec::bitvec;
 use bitvec::order::Lsb0;
 use spark_inference::engine::inference_engine::InferenceEngine;
-use spark_inference::engine::run::{InferenceResult, ModelInference};
+use spark_inference::engine::run::ModelInference;
 use spark_inference::utils::extractor::ExtraToTensor;
-use spark_inference::utils::masks::ApplyMask;
 use spark_media::image::decoder::size::ResizeImage;
-use spark_media::{Image, RGB};
+use spark_media::Image;
 
-fn maind() -> Result<()> {
+fn main() -> Result<()> {
     let mut image = {
         let mut image = Image::open_file("./data/image/a.png")?;
         image.resize_to((640, 640))?;
@@ -27,16 +25,18 @@ fn maind() -> Result<()> {
         }
         mask
     };
-    image.layering_mask(0, &mask, RGB(125, 0, 0))?;
-    image.save("./data/out/test_lay.png")?;
+    let mut new_image = image.clone();
+    // image.layering_mask(0, &mask, RGB(125, 0, 0))?;
+    new_image.save("./data/out/test_lays.png")?;
+    println!("cat!");
 
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn maind() -> Result<()> {
     let engine = InferenceEngine::new("./data/model/best.onnx")?;
     let image = {
-        let mut image = Image::open_file("./data/image/RainSight23.jpg")?;
+        let mut image = Image::open_file("./data/image/a.png")?;
         image.resize_to((640, 640))?;
         image
     };
@@ -44,8 +44,8 @@ fn main() -> Result<()> {
     let tensor = image.extra_standard_image_to_tensor()?;
     let mask = engine.inference(tensor.as_slice(), 0.25, 0.45)?;
 
-    let mut n_img = image.clone();
-    for InferenceResult { boxed: boxes, classify, mask, score } in mask.iter() {
+    let mut n_img = image.clone();//shadow clone need
+    /*for InferenceResult { boxed: boxes, classify, mask, score } in mask.iter() {
         println!("Boxes: {:?}, Classify: {:?}, Mask: {:?}, Score: {:?}", boxes, classify, mask.len(), score);
         let best = classify.iter()
             .enumerate()
@@ -54,7 +54,6 @@ fn main() -> Result<()> {
             .unwrap();
 
         n_img.layering_mask(
-            0,
             &mask,
             if best == 0 {
                 RGB(0, 55, 55)
@@ -85,9 +84,9 @@ fn main() -> Result<()> {
                 println!("Region ({}, {}): Coverage = {:.2}%", i, j, coverage * 100.0);
             }
         }*/
-    }
+    }*/
 
-    n_img.save(&format!("./data/out/{}.jpg", "best"))?;
+    n_img.save(&format!("./data/out/{}.png", "best"))?;
 
     Ok(())
 }

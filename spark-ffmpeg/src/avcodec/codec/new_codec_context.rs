@@ -1,9 +1,11 @@
+use crate::avcodec::codec::codec_parameter::AVCodecParameters;
 use crate::avcodec::{AVCodec, AVCodecContext};
 use crate::avframe::AVFrame;
+use crate::ffi::{avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, AVDictionary, AVRational, AVStream};
 use crate::pixformat::AVPixelFormat;
+use crate::DeepClone;
 use anyhow::{bail, Result};
-use std::ptr::null_mut;
-use crate::ffi::{avcodec_alloc_context3, avcodec_open2, AVDictionary, AVRational, AVStream};
+use std::ptr::{null, null_mut};
 
 impl AVCodecContext {
     pub fn from_stream(codec: &AVCodec, stream: &AVStream, av_dictionary: Option<AVDictionary>) -> Result<Self> {
@@ -53,6 +55,39 @@ impl AVCodecContext {
         Ok(context)
     }
 
+    pub fn copy_into(other: &AVCodecContext) -> Result<Self> {
+        let ptr = unsafe {
+            avcodec_alloc_context3(null())
+        };
+
+        let parameter = AVCodecParameters::from_context(other)?;
+
+        if ptr.is_null() {
+            bail!("Failed to allocate codec context.");
+        }
+
+        ffmpeg! {
+            avcodec_parameters_to_context(ptr, parameter.inner)
+        }
+        unsafe {
+            (*ptr).codec_id = other.codec_id;
+            (*ptr).codec = other.codec;
+        }
+        
+        println!("codec id: {:?}", parameter.codec_id);
+        unsafe { println!("codec: {:?}", (*ptr).codec); }
+
+        ffmpeg! {
+            avcodec_open2(
+                ptr,
+                (*ptr).codec,
+                null_mut()
+            )
+        }
+
+        Ok(AVCodecContext { inner: ptr })
+    }
+
     pub fn new(size: (i32, i32), format: AVPixelFormat, codec: &AVCodec, av_dictionary: Option<AVDictionary>) -> Result<Self> {
         let ptr = unsafe {
             avcodec_alloc_context3(codec.inner.cast_const())
@@ -95,6 +130,16 @@ impl AVCodecContext {
     }
 }
 
+impl DeepClone for AVCodecContext {
+    fn deep_clone(&self) -> Result<Self>
+    where
+        Self: Sized
+    {
+        let new = AVCodecContext::copy_into(self)?;
+        Ok(new)
+    }
+}
+
 
 #[test]
 fn test_codec_context() {
@@ -105,7 +150,7 @@ fn test_codec_context() {
     let mut format_context = AVFormatContext::open_file("./data/a.png", None).unwrap();
     format_context.video_stream().unwrap().for_each(|(_, x)| {
         let codec = AVCodec::new_decoder(x).unwrap();
-        let mut ctx = AVCodecContext::from_stream(&codec, x, None).unwrap();
+        let ctx = AVCodecContext::from_stream(&codec, x, None).unwrap();
 
         let buffer_size = ctx.buffer_size(AVPixelFormat::AvPixFmtRgb24).unwrap();
         println!("buffer_size: {:?}", buffer_size);

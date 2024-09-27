@@ -1,23 +1,9 @@
-use crate::image::util::inner_lock::InnerLock;
+use crate::image::util::image_inner::ImageInner;
+use crate::image::util::image_util::ImageUtil;
 use spark_ffmpeg::avcodec::AVCodecContext;
-use spark_ffmpeg::avformat::AVFormatContext;
-use spark_ffmpeg::avframe::AVFrame;
-use spark_ffmpeg::avpacket::AVPacket;
-use spark_ffmpeg::sws::SwsContext;
+use spark_ffmpeg::DeepClone;
 
-#[derive(Debug, Clone, Default)]
-pub(super) struct ImageUtil {
-    pub(super) sws: Option<SwsContext>,
-    pub(super) format: Option<AVFormatContext>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub(super) struct ImageInner {
-    pub(super) packet: Option<InnerLock<AVPacket>>,
-    pub(super) frame: Option<InnerLock<AVFrame>>,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Image {
     pub(super) inner: ImageInner,
     pub(super) utils: ImageUtil,
@@ -26,12 +12,16 @@ pub struct Image {
     pub(super) encoder: Option<AVCodecContext>,
 }
 
-impl ImageInner {
-    pub(crate) fn replace_packet(&mut self, packet: AVPacket) {
-        self.packet.replace(InnerLock::new(packet));
-    }
-
-    pub(crate) fn replace_frame(&mut self, frame: AVFrame) {
-        self.frame.replace(InnerLock::new(frame));
+impl Clone for Image {
+    fn clone(&self) -> Self {
+        Self {
+            inner: ImageInner {
+                packet: None,
+                frame: self.inner.frame.deep_clone().unwrap(),
+            },
+            utils: Default::default(),
+            decoder: self.decoder.as_ref().map(|x| x.deep_clone()).transpose().unwrap(),
+            encoder: self.encoder.as_ref().map(|x| x.deep_clone()).transpose().unwrap(),
+        }
     }
 }

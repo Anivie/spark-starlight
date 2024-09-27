@@ -1,3 +1,6 @@
+use crate::ffi::av_frame_clone;
+use crate::DeepClone;
+use anyhow::{bail, Result};
 use iter::frame_iter::PixelData;
 use std::mem::ManuallyDrop;
 
@@ -32,4 +35,29 @@ impl AVFrame {
         current_y: 0,
     }
   }
+}
+
+impl DeepClone for AVFrame {
+    fn deep_clone(&self) -> Result<Self>
+    where
+        Self: Sized
+    {
+        let new = unsafe {
+            av_frame_clone(self.inner)
+        };
+
+        if new.is_null() {
+            bail!("Failed to clone AVFrame.");
+        }
+
+        Ok(AVFrame {
+            inner: new,
+        })
+    }
+}
+
+impl Default for AVFrame {
+    fn default() -> Self {
+        Self::new().unwrap()
+    }
 }

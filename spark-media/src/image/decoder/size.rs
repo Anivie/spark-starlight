@@ -1,9 +1,7 @@
 use crate::Image;
 use anyhow::{anyhow, Result};
-use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::sws::SwsContext;
-use std::ops::Deref;
 
 pub trait ResizeImage {
     fn resize_to(&mut self, size: (i32, i32)) -> Result<()>;
@@ -33,16 +31,8 @@ impl ResizeImage for Image {
             scaled_frame
         };
 
-        sws.scale_image(self.frame()?.deref(), &scaled_frame)?;
-
-        let encoder = AVCodec::new_encoder_with_id(self.decoder.as_ref().unwrap().id())?;
-        let context = AVCodecContext::from_frame(&encoder, &scaled_frame, None)?;
-
-        context.send_frame(&scaled_frame)?;
-        let packet = context.receive_packet()?;
-        self.inner.replace_packet(packet);
-        self.inner.replace_frame(scaled_frame);
-        self.encoder = Some(context);
+        sws.scale_image(&self.inner.frame, &scaled_frame)?;
+        self.inner.frame = scaled_frame;
 
         Ok(())
     }
@@ -67,7 +57,7 @@ impl ResizeImage for Image {
             scaled_frame
         };
 
-        sws.scale_image(self.frame()?.deref(), &scaled_frame)?;
+        sws.scale_image(&self.inner.frame, &scaled_frame)?;
 
         let mut new = self.clone();
         if new.utils.sws.is_none() {

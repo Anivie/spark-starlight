@@ -1,5 +1,5 @@
-use crate::image::image::{ImageInner, ImageUtil};
-use crate::image::util::inner_lock::InnerLock;
+use crate::image::util::image_inner::ImageInner;
+use crate::image::util::image_util::ImageUtil;
 use crate::{Image, CODEC};
 use anyhow::{bail, Result};
 use log::warn;
@@ -41,8 +41,8 @@ impl Image {
             decoder: Some(codec_context),
             encoder: None,
             inner: ImageInner {
-                packet: Some(InnerLock::new(packet)),
-                frame: Some(InnerLock::new(frame)),
+                packet: Some(packet),
+                frame,
             },
             utils: ImageUtil {
                 sws: None,
