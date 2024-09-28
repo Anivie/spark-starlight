@@ -50,34 +50,42 @@ impl ResizeImage for Image {
     }
 
     fn resize_into(&self, size: (i32, i32)) -> Result<Self> {
-        let format = self.utils.format.as_ref().ok_or(anyhow!("Failed to get format."))?;
+        let mut new_image = self.clone();
+        let format = new_image.utils.format.as_ref().ok_or(anyhow!("Failed to get format."))?;
         let pixel_format = format.pixel_format(0)?;
-
-        let mut sws_temp = None;
-        let sws = match &self.utils.sws {
+        let sws = match &new_image.utils.sws {
             Some(sws) => sws,
             None => {
-                sws_temp.replace(SwsContext::from_format_context(&self.available_codec(), Some(pixel_format), Some((size.0, size.1)), None)?);
-                sws_temp.as_ref().unwrap()
+                let sws = SwsContext::from_format_context(&new_image.available_codec(), Some(pixel_format), Some((size.0, size.1)), None)?;
+                new_image.utils.sws = Some(sws);
+                new_image.utils.sws.as_ref().unwrap()
             }
         };
 
         let scaled_frame = {
             let mut scaled_frame = AVFrame::new()?;
             scaled_frame.set_size(size);
+            scaled_frame.set_format(pixel_format);
             scaled_frame.alloc_image(pixel_format, size.0, size.1)?;
             scaled_frame
         };
 
-        sws.scale_image(&self.inner.frame, &scaled_frame)?;
+        new_image.encoder
+            .as_mut()
+            .map(|x| {
+                x.set_size(size);
+            });
 
-        let mut new = self.clone();
-        if new.utils.sws.is_none() {
-            new.utils.sws = sws_temp;
-        }
-        // new.available_codec().replace_frame(scaled_frame);
+        new_image.decoder
+            .as_mut()
+            .map(|x| {
+                x.set_size(size);
+            });
 
-        Ok(new)
+        sws.scale_image(&new_image.inner.frame, &scaled_frame)?;
+        new_image.inner.frame = scaled_frame;
+
+        Ok(new_image)
     }
 }
 
