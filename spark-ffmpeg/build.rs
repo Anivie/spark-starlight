@@ -1,4 +1,4 @@
-use bindgen::FieldVisibilityKind;
+use bindgen::{CargoCallbacks, FieldVisibilityKind};
 use std::env;
 use std::path::PathBuf;
 
@@ -12,6 +12,7 @@ fn main() {
     println!("cargo:rustc-link-lib=avformat");
     println!("cargo:rustc-link-lib=avutil");
     println!("cargo:rustc-link-lib=swscale");
+    println!("cargo:rustc-link-lib=avfilter");
 
     // The bindgen::Builder is the main entry point
     // to bindgen, and lets you build up options for
@@ -22,7 +23,7 @@ fn main() {
         .header("./ffi/ffmpeg.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .parse_callbacks(Box::new(CargoCallbacks::new()))
         .derive_default(true)
         .blocklist_item("FP_NAN")
         .blocklist_item("FP_INFINITE")

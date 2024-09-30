@@ -13,6 +13,8 @@ pub mod avpacket;
 pub mod pixel;
 pub mod avstream;
 pub mod pixformat;
+mod avfilter_graph;
+mod avfilter_context;
 
 pub trait DeepClone {
     fn deep_clone(&self) -> anyhow::Result<Self>

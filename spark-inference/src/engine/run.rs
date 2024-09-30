@@ -4,7 +4,7 @@ use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaDevice, DevicePtr};
 use log::debug;
-use ndarray::{s, Array1, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
+use ndarray::{s, Array2, Axis, CowArray, Dim, Ix, Ix2, Ix3};
 use ort::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType, TensorRefMut};
 use rayon::prelude::*;
 use std::cmp::Ordering;
@@ -16,7 +16,7 @@ pub trait ModelInference {
 #[derive(Debug, Clone)]
 pub struct InferenceResult {
     pub boxed: Box,
-    pub classify: Array1<f32>,
+    pub classify: usize,
     pub mask: BitVec,
     pub score: f32,
 }
@@ -96,8 +96,11 @@ impl ModelInference for InferenceEngine {
                 };
 
                 let boxed = Box { x1, y1, x2, y2 };
-                let classify = box_output.slice(s![4 .. box_output.len() - 32]);
-                let classify = classify.to_owned();
+                let classify = box_output.slice(s![4 .. box_output.len() - 32]).iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(index, _)| index)
+                    .unwrap();
 
                 InferenceResult { boxed, classify, mask, score }
             })
