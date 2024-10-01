@@ -1,6 +1,8 @@
+use spark_proc_macro::wrap_ffmpeg;
+
 pub mod new_packet;
 pub mod file_io;
 
-wrap!(
-    AVPacket drop2 av_packet_free
+wrap_ffmpeg!(
+    AVPacket drop+ [av_packet_free]
 );

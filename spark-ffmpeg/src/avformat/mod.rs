@@ -1,3 +1,4 @@
+use spark_proc_macro::wrap_ffmpeg;
 use std::collections::HashMap;
 
 pub mod avformat_context;
@@ -16,9 +17,9 @@ pub enum AVMediaType {
     NB = 5,
 }
 
-wrap!(
+wrap_ffmpeg!(
     AVFormatContext {
         opened: bool,
         scanned_stream: HashMap<AVMediaType, Vec<u32>>,
-    } drop avformat_free_context
+    } drop [avformat_free_context]
 );

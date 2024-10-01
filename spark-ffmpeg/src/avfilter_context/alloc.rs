@@ -1,14 +1,12 @@
 use crate::avfilter_context::{AVFilterContext, AVFilterContextRaw};
 use crate::avfilter_graph::AVFilterGraph;
-use crate::ffi::{avfilter_free, avfilter_get_by_name, avfilter_graph_create_filter, avfilter_graph_free};
+use crate::ffi::{avfilter_get_by_name, avfilter_graph_create_filter};
 use anyhow::{bail, Result};
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::ptr::null_mut;
 
 impl AVFilterContext {
-    pub fn new(filter_name: &'static str, args: &'static str) -> Result<Self> {
-        let graph = AVFilterGraph::new()?;
-
+    pub(crate) fn new(filter_name: &'static str, args: &'static str, graph: &AVFilterGraph) -> Result<Self> {
         let filter_name = CString::new(filter_name)?;
         let args = CString::new(args)?;
 
@@ -33,17 +31,7 @@ impl AVFilterContext {
         }
 
         Ok(Self {
-            inner,
-            graph,
+            inner
         })
     }
-}
-
-#[test]
-fn test_context() {
-    let context = AVFilterContext::new(
-        "scale",
-        "1920:1080:force_original_aspect_ratio=decrease"
-    ).unwrap();
-    assert!(!context.inner.is_null());
 }

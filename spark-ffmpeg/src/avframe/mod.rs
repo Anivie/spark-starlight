@@ -1,4 +1,5 @@
 use iter::frame_iter::PixelData;
+use spark_proc_macro::wrap_ffmpeg;
 use std::mem::ManuallyDrop;
 
 pub mod avframe;
@@ -6,8 +7,8 @@ pub mod frame_info;
 mod iter;
 mod operator;
 
-wrap!(
-  AVFrame drop2 av_frame_free
+wrap_ffmpeg!(
+  AVFrame drop+ [av_frame_free]
 );
 
 impl AVFrame {

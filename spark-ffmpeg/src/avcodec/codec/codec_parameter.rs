@@ -1,9 +1,10 @@
 use crate::avcodec::AVCodecContext;
 use crate::ffi::{avcodec_parameters_alloc, avcodec_parameters_from_context};
 use anyhow::{bail, Result};
+use spark_proc_macro::wrap_ffmpeg;
 
-wrap!(
-    AVCodecParameters drop2 avcodec_parameters_free
+wrap_ffmpeg!(
+    AVCodecParameters drop+ [avcodec_parameters_free]
 );
 
 impl AVCodecParameters {

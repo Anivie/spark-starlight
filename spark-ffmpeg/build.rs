@@ -1,4 +1,4 @@
-use bindgen::{CargoCallbacks, FieldVisibilityKind};
+use bindgen::FieldVisibilityKind;
 use std::env;
 use std::path::PathBuf;
 
@@ -23,7 +23,7 @@ fn main() {
         .header("./ffi/ffmpeg.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
-        .parse_callbacks(Box::new(CargoCallbacks::new()))
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .derive_default(true)
         .blocklist_item("FP_NAN")
         .blocklist_item("FP_INFINITE")

@@ -4,7 +4,6 @@ use anyhow::Result;
 use bitvec::order::Lsb0;
 use bitvec::prelude::BitVec;
 use ndarray::parallel::prelude::*;
-use rayon::prelude::*;
 use spark_inference::engine::inference_engine::InferenceEngine;
 use spark_inference::engine::run::ModelInference;
 use spark_inference::utils::extractor::ExtraToTensor;
@@ -18,7 +17,7 @@ fn main() -> Result<()> {
     image.resize_to((640, 640))?;
 
     let tensor = image.extra_standard_image_to_tensor()?;
-    let mut mask = engine.inference(tensor.as_slice(), 0.25, 0.45)?;
+    let mask = engine.inference(tensor.as_slice(), 0.25, 0.45)?;
     let masks: Vec<_> = (0..2)
         .into_par_iter()
         .map(|class_index| {
