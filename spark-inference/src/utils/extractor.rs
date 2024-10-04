@@ -1,4 +1,4 @@
-use crate::utils::ptr_wrapper::SafeVecPtr;
+use spark_ffmpeg::util::ptr_wrapper::SafePtr;
 use anyhow::Result;
 use rayon::prelude::*;
 use spark_media::Image;
@@ -16,7 +16,7 @@ impl ExtraToTensor for Image {
             unsafe { vec.set_len(size); }
             vec
         };
-        let tensor_ptr = SafeVecPtr::new(tensor.as_mut_ptr());
+        let tensor_ptr = SafePtr::new(tensor.as_mut_ptr());
 
         self
             .raw_data()?

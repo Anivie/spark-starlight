@@ -8,11 +8,14 @@ use spark_ffmpeg::avstream::AVCodecID;
 use std::sync::LazyLock;
 
 pub mod image;
+pub mod filter;
 
 pub use image::image::Image;
 pub use spark_ffmpeg::pixel::pixel_formater::RGB;
 pub use spark_ffmpeg::pixformat::AVPixelFormat;
 pub use spark_ffmpeg::DeepClone;
+
+pub use spark_ffmpeg::avfilter_graph::AVFilterGraph;
 
 static CODEC: LazyLock<RwLock<HashMap<AVCodecID, AVCodec>>> = LazyLock::new(|| {
     RwLock::new(HashMap::new())

@@ -27,13 +27,13 @@ impl AVFrame {
         self.format = format as i32;
     }
 
-    pub fn alloc_image(&mut self, format: AVPixelFormat, width: i32, height: i32) -> Result<i32> {
+    pub fn alloc_image(&mut self, format: AVPixelFormat) -> Result<i32> {
         let need_size = unsafe {
             av_image_alloc(
                 self.data.as_ptr().cast_mut(),
                 self.linesize.as_ptr().cast_mut(),
-                width,
-                height,
+                self.width,
+                self.height,
                 format as i32,
                 32
             )
@@ -66,13 +66,8 @@ impl DeepClone for AVFrame {
             (&mut *new.inner, &*self.inner)
         };
 
-        new_ref.width = old_ref.width;
-        new_ref.height = old_ref.height;
-        new_ref.linesize = old_ref.linesize;
-        new_ref.format = old_ref.format;
-        new_ref.sample_rate = old_ref.sample_rate;
-        new_ref.nb_samples = old_ref.nb_samples;
-        new.alloc_image(AVPixelFormat::try_from(self.format)?, self.width, self.height)?;
+        new_ref.clone_from(old_ref);
+        new.alloc_image(AVPixelFormat::try_from(self.format)?)?;
 
         unsafe {
             copy(old_ref.data[0], new_ref.data[0], old_ref.linesize[0] as usize * old_ref.height as usize);

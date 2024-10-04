@@ -2,18 +2,7 @@ use crate::avframe::AVFrame;
 use crate::pixformat::AVPixelFormat;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::*;
-use std::ops::Deref;
-
-struct SafeVecPtr(*mut u8);
-impl Deref for SafeVecPtr {
-    type Target = *mut u8;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-unsafe impl Send for SafeVecPtr {}
-unsafe impl Sync for SafeVecPtr {}
+use crate::util::ptr_wrapper::SafePtr;
 
 impl AVFrame {
     pub fn replace_raw_data(&mut self, data: &[u8]) {
@@ -40,7 +29,7 @@ impl AVFrame {
             return;
         }
 
-        let ptr = SafeVecPtr(self.data[0]);
+        let ptr = SafePtr::new(self.data[0]);
         (0..height)
             .into_par_iter()
             .for_each(|y| {

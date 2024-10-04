@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 #[macro_use]
-mod util;
+pub mod util;
 mod ffi;
 
 pub mod avformat;
@@ -13,11 +13,15 @@ pub mod avpacket;
 pub mod pixel;
 pub mod avstream;
 pub mod pixformat;
-mod avfilter_graph;
-mod avfilter_context;
+pub mod avfilter_graph;
+pub mod avfilter_context;
 
 pub trait DeepClone {
     fn deep_clone(&self) -> anyhow::Result<Self>
     where
         Self: Sized;
+}
+
+pub trait CloneFrom<T> {
+    fn clone_copy_fields(&mut self, other: &T);
 }

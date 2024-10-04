@@ -1,6 +1,20 @@
 use bindgen::FieldVisibilityKind;
 use std::env;
 use std::path::PathBuf;
+use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
+
+#[derive(Debug)]
+struct Cat;
+
+impl ParseCallbacks for Cat {
+    fn add_derives(&self, info: &DeriveInfo<'_>) -> Vec<String> {
+        if info.kind == bindgen::callbacks::TypeKind::Struct {
+            vec!["CloneFrom".into()]
+        } else {
+            vec![]
+        }
+    }
+}
 
 fn main() {
     // Tell cargo to look for shared libraries in the specified directory
@@ -23,6 +37,7 @@ fn main() {
         .header("./ffi/ffmpeg.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
+        .raw_line("use spark_proc_macro::CloneFrom;")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .derive_default(true)
         .blocklist_item("FP_NAN")
@@ -31,6 +46,8 @@ fn main() {
         .blocklist_item("FP_SUBNORMAL")
         .blocklist_item("FP_NORMAL")
         .default_visibility(FieldVisibilityKind::PublicCrate)
+        .merge_extern_blocks(true)
+        .parse_callbacks(Box::new(Cat))
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.

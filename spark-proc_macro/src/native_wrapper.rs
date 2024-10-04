@@ -112,8 +112,12 @@ pub fn wrap_ffmpeg(token_stream: TokenStream) -> TokenStream {
     } = parse_macro_input!(token_stream as WrapArgs);
     let raw_name = format_ident!("{}Raw", name);
 
-    let generics: proc_macro2::TokenStream = parse_str(&generics.unwrap_or_default())
-        .expect("Failed to parse generics");
+    let generics: proc_macro2::TokenStream = if generics.is_some() {
+        parse_str(&format!("<{}>", generics.unwrap_or_default()))
+            .expect("Failed to parse generics")
+    }else {
+        quote! {}
+    };
 
     let fields: proc_macro2::TokenStream = parse_str(&fields)
         .expect("Failed to parse fields");
@@ -121,8 +125,8 @@ pub fn wrap_ffmpeg(token_stream: TokenStream) -> TokenStream {
     let mut output = quote! {
         use crate::ffi::#name as #raw_name;
 
-        #[derive(Debug, Clone)]
-        pub struct #name <#generics> {
+        #[derive(Debug)]
+        pub struct #name #generics {
             pub(crate) inner: *mut #raw_name,
             #fields
         }
@@ -140,6 +144,14 @@ pub fn wrap_ffmpeg(token_stream: TokenStream) -> TokenStream {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 unsafe {
                     &mut *self.inner
+                }
+            }
+        }
+
+        impl #generics crate::CloneFrom<#name> for #name #generics {
+            fn clone_copy_fields(&mut self, other: &Self) {
+                unsafe {
+                    (*self.inner).clone_copy_fields(&*other.inner);
                 }
             }
         }

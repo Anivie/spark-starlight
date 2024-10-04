@@ -1,4 +1,4 @@
-use crate::utils::ptr_wrapper::SafeVecPtr;
+use spark_ffmpeg::util::ptr_wrapper::SafePtr;
 use anyhow::Result;
 use bitvec::vec::BitVec;
 use rayon::prelude::*;
@@ -12,7 +12,7 @@ pub trait ApplyMask {
 impl ApplyMask for Image {
     fn layering_mask(&mut self, mask: &BitVec, apply_color: RGB) -> Result<()> {
         let mut data = self.raw_data()?;
-        let ptr = SafeVecPtr::new(data.as_mut_ptr());
+        let ptr = SafePtr::new(data.as_mut_ptr());
 
         (0 .. (self.get_width() * self.get_height() * 3) as usize)
             .into_par_iter()

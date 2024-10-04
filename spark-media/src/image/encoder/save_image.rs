@@ -20,8 +20,11 @@ impl Image {
     }
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        let encoder = self.try_encoder()?;
-        encoder.send_frame(&self.inner.frame)?;
+        self.assert_encoder()?;
+        let frame = &self.inner.frame;
+
+        let encoder = self.encoder.as_mut().unwrap();
+        encoder.send_frame(frame)?;
 
         let packet = encoder.receive_packet()?;
         packet.save(path)?;
