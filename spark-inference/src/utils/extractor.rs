@@ -1,6 +1,6 @@
-use spark_ffmpeg::util::ptr_wrapper::SafePtr;
 use anyhow::Result;
 use rayon::prelude::*;
+use spark_ffmpeg::util::ptr_wrapper::SafePtr;
 use spark_media::Image;
 
 pub trait ExtraToTensor {

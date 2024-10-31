@@ -38,4 +38,8 @@ impl AVCodecContext {
     pub fn pixel_format(&self) -> AVPixelFormat {
         AVPixelFormat::try_from(self.pix_fmt).unwrap()
     }
+
+    pub fn set_pixel_format(&mut self, format: AVPixelFormat) {
+        self.pix_fmt = format as i32;
+    }
 }

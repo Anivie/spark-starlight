@@ -1,7 +1,7 @@
+use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use bindgen::FieldVisibilityKind;
 use std::env;
 use std::path::PathBuf;
-use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 
 #[derive(Debug)]
 struct Cat;

@@ -1,8 +1,8 @@
 use bitvec::bitvec;
 use bitvec::prelude::Lsb0;
 use spark_inference::utils::masks::ApplyMask;
-use spark_media::{Image, RGB};
 use spark_media::image::decoder::size::ResizeImage;
+use spark_media::{Image, RGB};
 
 #[test]
 fn test() -> anyhow::Result<()> {

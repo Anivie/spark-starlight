@@ -1,6 +1,6 @@
 use crate::engine::IS_INIT;
 use anyhow::Result;
-use ort::{CUDAExecutionProvider, Session};
+use ort::Session;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
@@ -11,8 +11,8 @@ pub struct InferenceEngine {
 impl InferenceEngine {
     pub fn new(url: impl AsRef<Path>) -> Result<Self> {
         if !IS_INIT.load(Ordering::Relaxed) {
-            // let provider = TensorRTExecutionProvider::default().build().error_on_failure();
-            let provider = CUDAExecutionProvider::default().build().error_on_failure();
+            // let provider = ort::TensorRTExecutionProvider::default().build().error_on_failure();
+            let provider = ort::CUDAExecutionProvider::default().build().error_on_failure();
             ort::init()
                 .with_execution_providers([provider])
                 .commit()?;

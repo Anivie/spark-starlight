@@ -28,8 +28,6 @@ impl AVCodecContext {
         ffmpeg! {
             avcodec_receive_frame(self.inner, frame.inner)
         }
-        println!("linesize: {:?}", frame.linesize);
-        println!("pix_fmt: {:?}", frame.format);
 
         Ok(frame)
     }

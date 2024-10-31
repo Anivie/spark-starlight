@@ -15,6 +15,7 @@ pub mod avstream;
 pub mod pixformat;
 pub mod avfilter_graph;
 pub mod avfilter_context;
+mod av_rational;
 
 pub trait DeepClone {
     fn deep_clone(&self) -> anyhow::Result<Self>

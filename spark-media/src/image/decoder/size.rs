@@ -1,58 +1,14 @@
-use std::mem::forget;
 use crate::Image;
 use anyhow::{anyhow, Result};
 use rayon::prelude::*;
 use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::sws::SwsContext;
-use spark_ffmpeg::CloneFrom;
-use std::ptr::{copy, copy_nonoverlapping};
-use spark_ffmpeg::util::ptr_wrapper::SafePtr;
 
 pub trait ResizeImage {
     fn resize_to(&mut self, size: (i32, i32)) -> Result<()>;
     fn resize_into(&self, size: (i32, i32)) -> Result<Self>
     where
         Self: Sized;
-}
-
-impl Image {
-    pub fn resize(&mut self) -> Result<()> {
-        let max = self.get_width().max(self.get_height());
-        println!("{}", self.inner.frame.line_size(0));
-
-        let mut frame = AVFrame::new()?;
-        frame.clone_copy_fields(&self.inner.frame);
-        frame.set_size((max, max));
-        frame.alloc_image(self.pixel_format())?;
-        frame.get_raw_data(0).par_iter_mut().for_each(|x| *x = 0);
-
-        let origin_data = self.inner.frame.get_raw_data(0);
-
-        //把图片填充在中间
-        if self.get_width() > self.get_height() {
-            let need = max - self.get_height();
-
-            let ptr = unsafe {
-                frame
-                    .get_raw_data(0)
-                    .as_mut_ptr()
-                    .add(((need / 2) * self.inner.frame.line_size(0)) as usize)
-            };
-            let ptr = SafePtr::new(ptr);
-
-            (0..(self.get_height() * self.inner.frame.line_size(0))as usize)
-                .into_iter()
-                .for_each(|index| {
-                    unsafe {
-                        ptr.add(index).write(origin_data[index]);
-                    }
-                });
-        }
-        self.inner.frame = frame;
-
-
-        Ok(())
-    }
 }
 
 impl ResizeImage for Image {

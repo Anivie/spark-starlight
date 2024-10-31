@@ -1,12 +1,13 @@
 use crate::avframe::AVFrame;
 use crate::pixformat::AVPixelFormat;
+use crate::util::ptr_wrapper::SafePtr;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::*;
-use crate::util::ptr_wrapper::SafePtr;
 
 impl AVFrame {
     pub fn replace_raw_data(&mut self, data: &[u8]) {
         unsafe {
+            println!("ptr: {:?}, self: {:?}", data.as_ptr(), self.data[0]);
             self.data[0].copy_from_nonoverlapping(data.as_ptr(), data.len());
         }
     }

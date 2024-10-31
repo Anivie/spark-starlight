@@ -7,5 +7,6 @@ wrap_ffmpeg!(
     AVFilterGraph {
         contexts: Vec<AVFilterContext>,
         linked: bool,
+        locked: bool,
     } drop+ [avfilter_graph_free]
 );

@@ -1,12 +1,14 @@
-use std::ptr::null_mut;
 use crate::avfilter_context::AVFilterContext;
 use crate::avfilter_graph::AVFilterGraph;
-use crate::ffi::{av_buffersink_get_frame, avfilter_graph_alloc, avfilter_graph_config, avfilter_link, av_buffersrc_add_frame};
-use anyhow::{anyhow, Result};
 use crate::avframe::AVFrame;
+use crate::ffi::{av_buffersink_get_frame, av_buffersrc_add_frame, avfilter_graph_alloc, avfilter_graph_config, avfilter_link};
+use crate::pixformat::AVPixelFormat;
+use crate::CloneFrom;
+use anyhow::{anyhow, Result};
+use std::ptr::null_mut;
 
 impl AVFilterGraph {
-    pub fn new() -> Result<Self> {
+    pub fn new(pixel_format: AVPixelFormat, in_size: (i32, i32)) -> Result<Self> {
         let inner = unsafe {
             avfilter_graph_alloc()
         };
@@ -15,21 +17,40 @@ impl AVFilterGraph {
             return Err(anyhow!("Could not allocate AVFilterGraph"));
         }
 
-        Ok(Self {
+        let mut graph = Self {
             inner,
             contexts: vec![],
             linked: false,
-        })
+            locked: false,
+        };
+
+        let arg = format!(
+            "video_size={}x{}:pix_fmt={}:time_base={}/{}",
+            in_size.0, in_size.1,
+            pixel_format as i32,
+            1, 30
+        );
+        let context = AVFilterContext::new_with("buffer", "in", Some(&arg), &graph)?;
+        graph.contexts.push(context);
+
+        Ok(graph)
     }
 
     pub fn apply_image(&mut self, image: &AVFrame) -> Result<AVFrame> {
+        if !self.locked {
+            let context = AVFilterContext::new_with("buffersink", "out", None, self)?;
+            self.contexts.push(context);
+            self.locked = true;
+        }
+
         self.link()?;
 
         ffmpeg! {
             av_buffersrc_add_frame(self.contexts[0].inner, image.inner)
         }
 
-        let back = AVFrame::new()?;
+        let mut back = AVFrame::new()?;
+        back.clone_copy_fields(image);
         ffmpeg! {
             av_buffersink_get_frame(self.contexts[self.contexts.len() - 1].inner, back.inner)
         }
@@ -70,14 +91,4 @@ impl AVFilterGraph {
 
         Ok(())
     }
-}
-
-#[test]
-fn test_context() {
-    let mut context = AVFilterGraph::new().unwrap();
-    context.add_context(
-        "scale",
-        "1920:1080:force_original_aspect_ratio=decrease"
-    ).unwrap();
-
 }

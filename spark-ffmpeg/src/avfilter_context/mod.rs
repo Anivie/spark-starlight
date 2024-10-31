@@ -4,5 +4,5 @@ mod alloc;
 mod apply;
 
 wrap_ffmpeg!(
-    AVFilterContext drop [avfilter_free]
+    AVFilterContext/* drop [avfilter_free]*/
 );
