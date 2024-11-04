@@ -5,8 +5,6 @@ pub mod alloc;
 
 wrap_ffmpeg!(
     AVFilterGraph {
-        contexts: Vec<AVFilterContext>,
-        linked: bool,
-        locked: bool,
+        contexts: Vec<AVFilterContext>
     } drop+ [avfilter_graph_free]
 );

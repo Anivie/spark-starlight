@@ -14,7 +14,7 @@ impl Image {
     pub(crate) fn try_encoder(&mut self) -> Result<&AVCodecContext> {
         if self.encoder.is_none() {
             let decoder = self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist."))?;
-            let encoder = AVCodec::new_encoder_with_id(61)?;
+            let encoder = AVCodec::new_encoder_with_id(decoder.id())?;
 
             let context = AVCodecContext::from_frame(&encoder, &self.inner.frame, None)?;
             self.encoder = Some(context);

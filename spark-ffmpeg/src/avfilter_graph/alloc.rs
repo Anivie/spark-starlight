@@ -2,13 +2,12 @@ use crate::avfilter_context::AVFilterContext;
 use crate::avfilter_graph::AVFilterGraph;
 use crate::avframe::AVFrame;
 use crate::ffi::{av_buffersink_get_frame, av_buffersrc_add_frame, avfilter_graph_alloc, avfilter_graph_config, avfilter_link};
-use crate::pixformat::AVPixelFormat;
 use crate::CloneFrom;
 use anyhow::{anyhow, Result};
 use std::ptr::null_mut;
 
 impl AVFilterGraph {
-    pub fn new(pixel_format: AVPixelFormat, in_size: (i32, i32)) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let inner = unsafe {
             avfilter_graph_alloc()
         };
@@ -17,34 +16,13 @@ impl AVFilterGraph {
             return Err(anyhow!("Could not allocate AVFilterGraph"));
         }
 
-        let mut graph = Self {
+        Ok(Self {
             inner,
             contexts: vec![],
-            linked: false,
-            locked: false,
-        };
-
-        let arg = format!(
-            "video_size={}x{}:pix_fmt={}:time_base={}/{}",
-            in_size.0, in_size.1,
-            pixel_format as i32,
-            1, 30
-        );
-        let context = AVFilterContext::new_with("buffer", "in", Some(&arg), &graph)?;
-        graph.contexts.push(context);
-
-        Ok(graph)
+        })
     }
 
-    pub fn apply_image(&mut self, image: &AVFrame) -> Result<AVFrame> {
-        if !self.locked {
-            let context = AVFilterContext::new_with("buffersink", "out", None, self)?;
-            self.contexts.push(context);
-            self.locked = true;
-        }
-
-        self.link()?;
-
+    pub fn apply_image(&self, image: &AVFrame) -> Result<AVFrame> {
         ffmpeg! {
             av_buffersrc_add_frame(self.contexts[0].inner, image.inner)
         }
@@ -62,16 +40,17 @@ impl AVFilterGraph {
         let context = AVFilterContext::new(filter_name, args, self)?;
         self.contexts.push(context);
 
-        if self.linked {
-            self.linked = false;
-        }
+        Ok(())
+    }
+
+    pub fn add_context_with_name(&mut self, name: &'static str, filter_name: &'static str, args: Option<&str>) -> Result<()> {
+        let context = AVFilterContext::new_with(name, filter_name, args, self)?;
+        self.contexts.push(context);
 
         Ok(())
     }
 
-    fn link(&mut self) -> Result<()> {
-        if self.linked { return Ok(()); }
-
+    pub fn link(&mut self) -> Result<()> {
         if self.contexts.len() > 1 {
             for index in 0..self.contexts.len() - 1 {
                 let src = self.contexts[index].inner;
@@ -86,8 +65,6 @@ impl AVFilterGraph {
                 avfilter_graph_config(self.inner, null_mut())
             }
         }
-
-        self.linked = true;
 
         Ok(())
     }

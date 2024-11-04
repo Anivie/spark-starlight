@@ -1,30 +1,47 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bitvec::order::Lsb0;
 use bitvec::prelude::BitVec;
 use ndarray::parallel::prelude::*;
+use rayon::prelude::*;
 use spark_inference::engine::inference_engine::InferenceEngine;
 use spark_inference::engine::run::ModelInference;
 use spark_inference::utils::extractor::ExtraToTensor;
 use spark_inference::utils::masks::ApplyMask;
 use spark_media::{Image, RGB};
+use spark_media::filter::filter::AVFilter;
 
 fn main() -> Result<()> {
-    // let mut image = Image::open_file("./data/image/s1.jpeg")?;
-
     let engine = InferenceEngine::new("./data/model/best2.onnx")?;
-    for (index, x) in std::fs::read_dir("./data/image")?.enumerate() {
+
+    /*for (index, x) in std::fs::read_dir("./data/image")?.enumerate() {
         let image = Image::open_file(x?.path().to_str().unwrap())?;
         run(image, &engine, index)?
-    }
+    }*/
+
+    let _: Vec<Result<_>> = std::fs::read_dir("./data/image")?
+        .enumerate()
+        .par_bridge()
+        .map(|(index, x)| {
+            let image = Image::open_file(x?.path().to_str().ok_or(anyhow!("empty path!"))?)?;
+            Ok(run(image, &engine, index))
+        })
+        .collect();
 
     Ok(())
 }
 
 fn run(mut image: Image, engine: &InferenceEngine, index: usize) -> Result<()> {
-    image.add_filter()?;
-    println!("pixel format: {:?}", image.pixel_format());
+    let filter = {
+        let mut filter = AVFilter::new(image.pixel_format(), image.get_size())?;
+        filter.add_context("scale", "640:640:force_original_aspect_ratio=decrease")?;
+        filter.add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?;
+        filter.add_context("format", "rgb24")?;
+        filter.lock()?
+    };
+
+    image.apply_filter(&filter)?;
 
     let number_of_species = 2;
 
