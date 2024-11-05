@@ -1,5 +1,6 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
 
+use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use bitvec::order::Lsb0;
 use bitvec::prelude::BitVec;
@@ -15,11 +16,12 @@ use spark_media::filter::filter::AVFilter;
 fn main() -> Result<()> {
     let engine = InferenceEngine::new("./data/model/best2.onnx")?;
 
-    /*for (index, x) in std::fs::read_dir("./data/image")?.enumerate() {
+    for (index, x) in std::fs::read_dir("./data/image")?.enumerate() {
         let image = Image::open_file(x?.path().to_str().unwrap())?;
         run(image, &engine, index)?
-    }*/
+    }
 
+    /*
     let _: Vec<Result<_>> = std::fs::read_dir("./data/image")?
         .enumerate()
         .par_bridge()
@@ -28,13 +30,14 @@ fn main() -> Result<()> {
             Ok(run(image, &engine, index))
         })
         .collect();
+    */
 
     Ok(())
 }
 
 fn run(mut image: Image, engine: &InferenceEngine, index: usize) -> Result<()> {
     let filter = {
-        let mut filter = AVFilter::new(image.pixel_format(), image.get_size())?;
+        let mut filter = AVFilter::new(image.pixel_format()?, image.get_size())?;
         filter.add_context("scale", "640:640:force_original_aspect_ratio=decrease")?;
         filter.add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?;
         filter.add_context("format", "rgb24")?;
@@ -75,7 +78,7 @@ fn run(mut image: Image, engine: &InferenceEngine, index: usize) -> Result<()> {
         )?;
     }
 
-    image.save(format!("./data/out/{}.png", index))?;
+    image.save_with_format(format!("./data/out/{}.png", index))?;
 
     Ok(())
 }
