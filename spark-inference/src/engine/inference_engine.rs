@@ -19,7 +19,8 @@ impl InferenceEngine {
             IS_INIT.store(true, Ordering::Relaxed);
         }
 
-        let session = Session::builder()?.commit_from_file(url)?;
+        let session = Session::builder()?
+            .commit_from_file(url)?;
 
         Ok(InferenceEngine { session })
     }

@@ -41,6 +41,10 @@ impl AVFrame {
 
         Ok(need_size)
     }
+    
+    pub fn pixel_format(&self) -> Result<AVPixelFormat> {
+        Ok(AVPixelFormat::try_from(self.format)?)
+    }
 
     pub fn fill_arrays(&mut self, data: *const u8, format: AVPixelFormat, size: (i32, i32)) -> Result<i32> {
         let need_size = native! {

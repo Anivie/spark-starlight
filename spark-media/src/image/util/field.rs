@@ -11,10 +11,14 @@ impl Image {
             .unwrap_or_else(|| self.decoder.as_ref().expect("At least one codec must be available"))
     }
 
-    pub(crate) fn try_encoder(&mut self) -> Result<&AVCodecContext> {
+    pub(crate) fn try_encoder(&mut self, codec_id: Option<u32>) -> Result<&AVCodecContext> {
         if self.encoder.is_none() {
-            let decoder = self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist."))?;
-            let encoder = AVCodec::new_encoder_with_id(decoder.id())?;
+            let encoder = AVCodec::new_encoder_with_id(
+                codec_id
+                    .unwrap_or_else(
+                        || self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist.")).unwrap().id()
+                    )
+            )?;
 
             let context = AVCodecContext::from_frame(&encoder, &self.inner.frame, None)?;
             self.encoder = Some(context);
@@ -23,10 +27,14 @@ impl Image {
         Ok(self.encoder.as_ref().unwrap())
     }
 
-    pub(crate) fn try_decoder(&mut self) -> Result<&AVCodecContext> {
+    pub(crate) fn try_decoder(&mut self, codec_id: Option<u32>) -> Result<&AVCodecContext> {
         if self.decoder.is_none() {
-            let encoder = self.encoder.as_ref().ok_or(anyhow!("Init decoder need encoder exist."))?;
-            let decoder = AVCodec::new_decoder_with_id(encoder.id())?;
+            let decoder = AVCodec::new_decoder_with_id(
+                codec_id
+                    .unwrap_or_else(
+                        || self.encoder.as_ref().ok_or(anyhow!("Init decoder need encoder exist.")).unwrap().id()
+                    )
+            )?;
 
             let context = AVCodecContext::from_frame(&decoder, &self.inner.frame, None)?;
             self.decoder = Some(context);
@@ -35,8 +43,8 @@ impl Image {
         Ok(self.decoder.as_ref().unwrap())
     }
 
-    pub fn pixel_format(&self) -> AVPixelFormat {
-        self.available_codec().pixel_format()
+    pub fn pixel_format(&self) -> Result<AVPixelFormat> {
+        self.inner.frame.pixel_format()
     }
 
     pub fn codec_id(&self) -> AVCodecID {

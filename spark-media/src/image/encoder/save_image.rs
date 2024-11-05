@@ -1,6 +1,6 @@
 use crate::image::util::image_inner::ImageInner;
 use crate::Image;
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::avstream::AVCodecID;
@@ -36,7 +36,34 @@ impl Image {
     }
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        self.try_encoder()?;
+        self.try_encoder(None)?;
+
+        let encoder = self.encoder.as_mut().unwrap();
+        encoder.send_frame(&self.inner.frame)?;
+
+        let packet = encoder.receive_packet()?;
+        packet.save(path)?;
+
+        self.inner.packet = Some(packet);
+
+        Ok(())
+    }
+
+    pub fn save_with_format(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+
+        let extension = path.extension();
+        if let Some(extension) = extension {
+            let extension = extension.to_ascii_uppercase();
+            let extension = extension.to_str().ok_or(anyhow!("Fail to cast extension to str."))?;
+            let id = match extension {
+                "PNG" => 61,
+                _ => bail!("UNKNOWN FILE FORMAT")
+            };
+            self.try_encoder(Some(id))?;
+        } else {
+            self.try_encoder(None)?;
+        }
 
         let encoder = self.encoder.as_mut().unwrap();
         encoder.send_frame(&self.inner.frame)?;
