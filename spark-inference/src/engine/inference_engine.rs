@@ -1,14 +1,23 @@
-use crate::engine::IS_INIT;
+use std::ops::Deref;
 use anyhow::Result;
 use ort::Session;
 use std::path::Path;
 use std::sync::atomic::Ordering;
+use crate::IS_INIT;
 
-pub struct InferenceEngine {
+pub struct OnnxSession {
     pub(crate) session: Session
 }
 
-impl InferenceEngine {
+impl Deref for OnnxSession {
+    type Target = Session;
+
+    fn deref(&self) -> &Self::Target {
+        &self.session
+    }
+}
+
+impl OnnxSession {
     pub fn new(url: impl AsRef<Path>) -> Result<Self> {
         if !IS_INIT.load(Ordering::Relaxed) {
             // let provider = ort::TensorRTExecutionProvider::default().build().error_on_failure();
@@ -20,8 +29,9 @@ impl InferenceEngine {
         }
 
         let session = Session::builder()?
+            .with_intra_threads(6)?
             .commit_from_file(url)?;
 
-        Ok(InferenceEngine { session })
+        Ok(OnnxSession { session })
     }
 }

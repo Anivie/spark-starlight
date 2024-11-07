@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use spark_ffmpeg::avfilter_graph::AVFilterGraph;
 
-pub struct AVFilter<T: FilterState = UnLocked> {
+pub struct AVFilter<T: FilterState = Locked> {
     pub(crate) inner: AVFilterGraph,
     pub(crate) _marker: PhantomData<T>
 }

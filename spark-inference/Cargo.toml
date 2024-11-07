@@ -10,15 +10,17 @@ cudarc = { version = "0.12.1", features = ["cuda-12050", "cudnn"] }
 rayon = "1.10.0"
 bitvec = "1.0.1"
 
-anyhow = "1.0.86"
-image = "0.25.2"
+anyhow = "1.0.92"
+
+blas-src = { version = "0.10", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
 
 spark-ffmpeg = { path = "../spark-ffmpeg" }
 spark-media = { path = "../spark-media" }
 
 [dependencies.ndarray]
 version = "0.16.1"
-features = ["rayon", "matrixmultiply-threading"]
+features = ["rayon", "matrixmultiply-threading", "blas"]
 
 [dependencies.ort]
 git = "https://github.com/pykeio/ort.git"

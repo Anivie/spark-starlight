@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use spark_ffmpeg::avframe::AVFrame;
 
 impl AVFilter {
-    pub fn new(pixel_format: AVPixelFormat, in_size: (i32, i32)) -> Result<Self> {
+    pub fn new(pixel_format: AVPixelFormat, in_size: (i32, i32)) -> Result<AVFilter<UnLocked>> {
         let mut graph = AVFilterGraph::new()?;
 
         let arg = format!(

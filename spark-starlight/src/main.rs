@@ -1,84 +1,22 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
 
-use std::collections::HashMap;
-use anyhow::{anyhow, Result};
-use bitvec::order::Lsb0;
-use bitvec::prelude::BitVec;
-use ndarray::parallel::prelude::*;
-use rayon::prelude::*;
-use spark_inference::engine::inference_engine::InferenceEngine;
-use spark_inference::engine::run::ModelInference;
-use spark_inference::utils::extractor::ExtraToTensor;
-use spark_inference::utils::masks::ApplyMask;
-use spark_media::{Image, RGB};
-use spark_media::filter::filter::AVFilter;
+use anyhow::Result;
+use spark_inference::engine::inference_engine::OnnxSession;
+use spark_inference::inference::inference_sam::{SAM2InferenceSession, SamModelInference};
 
 fn main() -> Result<()> {
-    let engine = InferenceEngine::new("./data/model/best2.onnx")?;
+    let image_encoder = OnnxSession::new("./data/model/image_encoder.onnx")?;
+    let image_decoder = OnnxSession::new("./data/model/image_decoder.onnx")?;
+    let memory_attention = OnnxSession::new("./data/model/memory_attention.onnx")?;
+    let memory_encoder = OnnxSession::new("./data/model/memory_encoder.onnx")?;
 
-    for (index, x) in std::fs::read_dir("./data/image")?.enumerate() {
-        let image = Image::open_file(x?.path().to_str().unwrap())?;
-        run(image, &engine, index)?
-    }
+    println!("image_encoder: {:?}, out: {:?}\n", image_encoder.inputs, image_encoder.outputs);
+    println!("memory_attention: {:?}", memory_attention.inputs);
+    /*println!("image_decoder: {:?}", image_decoder.inputs);
 
-    /*
-    let _: Vec<Result<_>> = std::fs::read_dir("./data/image")?
-        .enumerate()
-        .par_bridge()
-        .map(|(index, x)| {
-            let image = Image::open_file(x?.path().to_str().ok_or(anyhow!("empty path!"))?)?;
-            Ok(run(image, &engine, index))
-        })
-        .collect();
-    */
+    println!("memory_encoder: {:?}", memory_encoder.inputs);*/
 
-    Ok(())
-}
-
-fn run(mut image: Image, engine: &InferenceEngine, index: usize) -> Result<()> {
-    let filter = {
-        let mut filter = AVFilter::new(image.pixel_format()?, image.get_size())?;
-        filter.add_context("scale", "640:640:force_original_aspect_ratio=decrease")?;
-        filter.add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?;
-        filter.add_context("format", "rgb24")?;
-        filter.lock()?
-    };
-
-    image.apply_filter(&filter)?;
-
-    let number_of_species = 2;
-
-    let tensor = image.extra_standard_image_to_tensor()?;
-    let mask = engine.inference(tensor.as_slice(), 0.25, 0.45)?;
-
-    let masks: Vec<BitVec> = (0..number_of_species)
-        .into_par_iter()
-        .map(|class_index| {
-            let mut mask_all = BitVec::<usize, Lsb0>::repeat(false, 640 * 640);
-            mask.iter()
-                .filter(|x| x.classify == class_index)
-                .flat_map(|each_class| each_class.mask.iter().enumerate())
-                .for_each(|(index, all)| {
-                    if *all {
-                        mask_all.set(index, true);
-                    }
-                });
-            mask_all
-        })
-        .collect();
-
-    for (index, mask) in masks.iter().enumerate() {
-        image.layering_mask(
-            mask,
-            if index == 0 {
-                RGB(0, 0, 125)
-            } else {
-                RGB(125, 0, 0)
-            },
-        )?;
-    }
-
-    image.save_with_format(format!("./data/out/{}.png", index))?;
+    let sam2 = SAM2InferenceSession::new(image_encoder, image_decoder, memory_attention, memory_encoder);
 
     Ok(())
 }
