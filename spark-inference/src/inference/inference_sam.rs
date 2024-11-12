@@ -48,7 +48,6 @@ impl SamModelInference for SAM2InferenceSession {
         let image_size = image.get_size();
         image.apply_filter(&filter)?;
 
-        // let tensor = image.extra_standard_image_to_tensor()?;
         let encoder_output = self.inference_image_encoder(image.raw_data()?.deref())?;
 
         let decoder_output = self.inference_image_decoder(
@@ -87,19 +86,20 @@ impl SAM2InferenceSession {
         });
 
         let buffer = INFERENCE_CUDA.htod_sync_copy(image.as_slice())?;
+        let cfg = LaunchConfig::for_num_elems((image.len() / 3) as u32);
+
         let tensor: TensorRefMut<'_, f32> = unsafe {
-            let mut out = INFERENCE_CUDA.alloc::<f32>(image.len())?;
-            let cfg = LaunchConfig::for_num_elems((image.len() / 3) as u32);
+            let mut tensor = INFERENCE_CUDA.alloc::<f32>(image.len())?;
 
             INFERENCE_CUDA.normalise_pixel_mean().launch(cfg, (
-                &mut out, &buffer,
+                &mut tensor, &buffer,
                 MEAN.deref(), STD.deref(),
                 image.len(),
             ))?;
 
             TensorRefMut::from_raw(
                 MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
-                (*out.device_ptr() as usize as *mut ()).cast(),
+                (*tensor.device_ptr() as usize as *mut ()).cast(),
                 vec![1, 3, 1024, 1024],
             )?
         };
