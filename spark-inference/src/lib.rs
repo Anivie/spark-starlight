@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #![cfg_attr(debug_assertions, allow(warnings))]
 
+extern crate openblas_src;
+
 pub mod engine;
 pub mod utils;
 pub mod inference;

@@ -96,7 +96,6 @@ impl SAM2InferenceSession {
                 MEAN.deref(), STD.deref(),
                 image.len(),
             ))?;
-            INFERENCE_CUDA.synchronize()?;
 
             TensorRefMut::from_raw(
                 MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
@@ -105,6 +104,7 @@ impl SAM2InferenceSession {
             )?
         };
 
+        INFERENCE_CUDA.synchronize()?;
         Ok(self.image_encoder.run(vec![("image", SessionInputValue::from(tensor))])?)
     }
 

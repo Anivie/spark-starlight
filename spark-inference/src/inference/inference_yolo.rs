@@ -2,16 +2,20 @@ use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::OnnxSession;
 use anyhow::Result;
 use bitvec::prelude::*;
-use cudarc::driver::{CudaDevice, DevicePtr};
+use cudarc::driver::{CudaDevice, DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::debug;
 use ndarray::{s, Axis, Ix2, Ix3};
 use ort::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType, TensorRefMut};
 use rayon::prelude::*;
 use std::cmp::Ordering;
+use std::ops::Deref;
+use spark_media::filter::filter::AVFilter;
+use spark_media::Image;
 use crate::inference::{linear_interpolate, sigmoid};
+use crate::INFERENCE_CUDA;
 
 pub trait YoloModelInference {
-    fn inference(&self, tensor: &[f32], confidence: f32, probability_mask: f32) -> Result<Vec<YoloInferenceResult>>;
+    fn inference_yolo(&self, tensor: Image, confidence: f32, probability_mask: f32) -> Result<Vec<YoloInferenceResult>>;
 }
 
 #[derive(Debug, Clone)]
@@ -23,16 +27,32 @@ pub struct YoloInferenceResult {
 }
 
 impl YoloModelInference for OnnxSession {
-    fn inference(&self, tensor: &[f32], conf_thres: f32, iou_thres: f32) -> Result<Vec<YoloInferenceResult>> {
+    fn inference_yolo(&self, mut image: Image, conf_thres: f32, iou_thres: f32) -> Result<Vec<YoloInferenceResult>> {
+        let filter = {
+            let mut filter = AVFilter::new(image.pixel_format()?, image.get_size())?;
+            filter.add_context("scale", "640:640:force_original_aspect_ratio=decrease")?;
+            filter.add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?;
+            filter.add_context("format", "rgb24")?;
+            filter.lock()?
+        };
+        image.apply_filter(&filter)?;
+
         let tensor = {
-            let device = CudaDevice::new(0)?;
-            let device_data = device.htod_sync_copy(tensor)?;
             let tensor: TensorRefMut<'_, f32> = unsafe {
-                TensorRefMut::from_raw(
+                let buffer = INFERENCE_CUDA.htod_sync_copy(image.raw_data()?.as_slice())?;
+                let mut tensor = INFERENCE_CUDA.alloc::<f32>(buffer.len())?;
+                let cfg = LaunchConfig::for_num_elems((buffer.len() / 3) as u32);
+
+                INFERENCE_CUDA.normalise_pixel_div().launch(cfg, (&mut tensor, &buffer, buffer.len()))?;
+
+                let back = TensorRefMut::from_raw(
                     MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
-                    (*device_data.device_ptr() as usize as *mut ()).cast(),
+                    (*tensor.device_ptr() as usize as *mut ()).cast(),
                     vec![1, 3, 640, 640],
-                )?
+                )?;
+                INFERENCE_CUDA.synchronize()?;
+
+                back
             };
             tensor
         };

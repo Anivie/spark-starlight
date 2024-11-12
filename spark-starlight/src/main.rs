@@ -4,11 +4,42 @@
 use anyhow::Result;
 use spark_inference::engine::inference_engine::OnnxSession;
 use spark_inference::inference::inference_sam::{SAM2InferenceSession, SamModelInference};
+use spark_inference::inference::inference_yolo::YoloModelInference;
 use spark_inference::init_inference_engine;
 use spark_inference::utils::graph::Point;
 use spark_inference::utils::masks::ApplyMask;
 use spark_media::{Image, RGB};
 use spark_media::filter::filter::AVFilter;
+
+fn main_yolo() -> Result<()> {
+    init_inference_engine()?;
+
+    let path = "./data/image/a.png";
+    let image = Image::open_file(path)?;
+
+    let yolo = OnnxSession::new("./data/model/best2.onnx")?;
+
+    let results = yolo.inference_yolo(image, 0.25, 0.45)?;
+    println!("{:?}", results.len());
+
+    let mut image = Image::open_file(path)?;
+    let filter = {
+        let mut filter = AVFilter::new(image.pixel_format()?, image.get_size())?;
+        filter.add_context("scale", "640:640:force_original_aspect_ratio=decrease")?;
+        filter.add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?;
+        filter.add_context("format", "rgb24")?;
+        filter.lock()?
+    };
+    image.apply_filter(&filter)?;
+
+    for result in results {
+        image.layering_mask(&result.mask, RGB(20, 20, 0))?;
+    }
+
+    image.save_with_format("./data/out/y_out.png")?;
+
+    Ok(())
+}
 
 fn main() -> Result<()> {
     init_inference_engine()?;
