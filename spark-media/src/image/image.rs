@@ -20,8 +20,8 @@ impl Clone for Image {
                 packet: None,
                 frame: self.inner.frame.deep_clone().unwrap(),
             },
-            decoder: self.decoder.as_ref().map(|x| x.deep_clone()).transpose().unwrap(),
-            encoder: self.encoder.as_ref().map(|x| x.deep_clone()).transpose().unwrap(),
+            decoder: None,
+            encoder: None,
         }
     }
 }

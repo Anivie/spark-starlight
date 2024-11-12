@@ -23,9 +23,7 @@ impl ApplyMask for Image {
             .for_each(|index| {
                 if !unsafe {
                     *mask.get_unchecked(index / 3)
-                } {
-                    return;
-                }
+                } { return; }
 
                 match (index % 3, apply_color.0 > 0, apply_color.1 > 0, apply_color.2 > 0) {
                     (0, true, _, _) => unsafe {

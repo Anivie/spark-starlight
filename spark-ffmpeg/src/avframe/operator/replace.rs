@@ -1,5 +1,5 @@
 use crate::avframe::AVFrame;
-use crate::pixformat::AVPixelFormat;
+use crate::ffi_enum::AVPixelFormat;
 use crate::util::ptr_wrapper::SafePtr;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::*;
@@ -15,7 +15,7 @@ impl AVFrame {
     /// Fill the frame with data.
     /// Data format: RGB|RGB|RGB|...
     pub fn fill_data(&mut self, data: &[u8], pix_fmt: AVPixelFormat) {
-        let width = if pix_fmt == AVPixelFormat::AvPixFmtGray8 {
+        let width = if pix_fmt == AVPixelFormat::Gray8 {
             unsafe { *self.inner }.width
         }else {
             unsafe { *self.inner }.width * 3

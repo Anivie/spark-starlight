@@ -1,9 +1,8 @@
 use crate::avframe::AVFrame;
-use crate::ffi::{av_frame_alloc, av_image_alloc, av_image_fill_arrays};
-use crate::pixformat::AVPixelFormat;
+use crate::ffi::{av_frame_alloc, av_image_alloc, av_image_copy, av_image_fill_arrays};
+use crate::ffi_enum::AVPixelFormat;
 use crate::DeepClone;
 use anyhow::{anyhow, Result};
-use std::ptr::copy;
 
 impl AVFrame {
     pub fn new() -> Result<Self> {
@@ -73,8 +72,16 @@ impl DeepClone for AVFrame {
         new_ref.clone_from(old_ref);
         new.alloc_image(AVPixelFormat::try_from(self.format)?)?;
 
-        unsafe {
-            copy(old_ref.data[0], new_ref.data[0], old_ref.linesize[0] as usize * old_ref.height as usize);
+        unsafe  {
+            av_image_copy(
+                new_ref.data.as_ptr().cast_mut(),
+                new_ref.linesize.as_ptr().cast_mut(),
+                old_ref.data.as_ptr().cast(),
+                old_ref.linesize.as_ptr(),
+                AVPixelFormat::try_from(old_ref.format)? as i32,
+                old_ref.width,
+                old_ref.height
+            )
         }
 
         Ok(new)

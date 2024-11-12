@@ -149,9 +149,9 @@ pub fn wrap_ffmpeg(token_stream: TokenStream) -> TokenStream {
         }
 
         impl #generics crate::CloneFrom<#name> for #name #generics {
-            fn clone_copy_fields(&mut self, other: &Self) {
+            fn clone_fields_from(&mut self, other: &Self) {
                 unsafe {
-                    (*self.inner).clone_copy_fields(&*other.inner);
+                    (*self.inner).clone_fields_from(&*other.inner);
                 }
             }
         }

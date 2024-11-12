@@ -1,6 +1,6 @@
 use crate::avcodec::AVCodecContext;
 use crate::ffi::av_image_get_buffer_size;
-use crate::pixformat::AVPixelFormat;
+use crate::ffi_enum::{AVCodecID, AVPixelFormat};
 use anyhow::anyhow;
 
 impl AVCodecContext {
@@ -31,8 +31,8 @@ impl AVCodecContext {
         }
     }
 
-    pub fn id(&self) -> u32 {
-        self.codec_id
+    pub fn id(&self) -> AVCodecID {
+        AVCodecID::try_from(self.codec_id).unwrap()
     }
 
     pub fn pixel_format(&self) -> AVPixelFormat {

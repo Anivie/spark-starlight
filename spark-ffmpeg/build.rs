@@ -1,7 +1,13 @@
+#![feature(substr_range)]
+#![feature(let_chains)]
+
+use std::collections::HashMap;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use bindgen::FieldVisibilityKind;
 use std::env;
 use std::path::PathBuf;
+use convert_case::{Case, Casing};
+use rayon::prelude::*;
 
 #[derive(Debug)]
 struct Cat;
@@ -58,4 +64,43 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+
+    let codec_id = extract_enum(&bindings.to_string(), "AVCodecID_AV_CODEC_ID_", "u32");
+    std::fs::write(out_path.join("codec_id.rs"), codec_id).unwrap();
+
+    let codec_id = extract_enum(&bindings.to_string(), "AVPixelFormat_AV_PIX_FMT_", "i32");
+    std::fs::write(out_path.join("pixel.rs"), codec_id).unwrap();
+}
+
+fn extract_enum(target: &str, pattern: &str, types: &str) -> String {
+    let name = pattern.chars().take_while(|x| *x != '_').collect::<String>();
+    let middle = target
+        .split('\n')
+        .par_bridge()
+        .filter(|x| x.contains(pattern))
+        .map(|x| {
+            let string = x.chars()
+                .skip(10)
+                .skip(pattern.len())
+                .collect::<String>();
+            let string = string
+                .replace(format!(": {}", name).as_str(), "")
+                .replace(";", ",\n")
+                .to_case(Case::UpperCamel);
+            let string = if let Some(c) = string.chars().next() && c.is_ascii_digit() {
+                format!("_{}", string)
+            }else {
+                string
+            };
+
+            let tail = string.chars().rev().take_while(|x| *x != '=').collect::<String>();
+            let tail = tail.chars().rev().collect::<String>();
+
+            (tail, format!("    {}", string))
+        })
+        .collect::<HashMap<String, String>>();
+
+    let middle = middle.values().cloned().collect::<String>();
+
+    format!("#[repr({})]\n#[derive(num_enum::TryFromPrimitive, Copy, Clone, PartialEq, Eq, Debug, Hash)]\npub enum {} {{\n{}\n}}", types, name, middle)
 }

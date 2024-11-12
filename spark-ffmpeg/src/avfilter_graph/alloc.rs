@@ -28,7 +28,7 @@ impl AVFilterGraph {
         }
 
         let mut back = AVFrame::new()?;
-        back.clone_copy_fields(image);
+        back.clone_fields_from(image);
         ffmpeg! {
             av_buffersink_get_frame(self.contexts[self.contexts.len() - 1].inner, back.inner)
         }

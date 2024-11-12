@@ -1,13 +1,14 @@
 use crate::avformat::{AVFormatContext, AVFormatContextRaw};
 use crate::avpacket::AVPacket;
 use crate::ffi::{av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat};
-use crate::pixformat::AVPixelFormat;
-use anyhow::Result;
+use crate::ffi_enum::AVPixelFormat;
+use anyhow::{anyhow, Result};
 use std::ffi::CString;
+use std::path::Path;
 use std::ptr::{null, null_mut};
 
 pub trait OpenFileToAVFormatContext {
-    fn open_file(path: impl Into<String>, format: Option<&AVInputFormat>) -> Result<Self>
+    fn open_file(path: impl AsRef<Path>, format: Option<&AVInputFormat>) -> Result<Self>
     where
         Self: Sized;
     fn open_file_arg<'a>(path: &str, format: Option<&AVInputFormat>, dictionary: &'a mut AVDictionary) -> Result<(Self, &'a AVDictionary)>
@@ -16,11 +17,17 @@ pub trait OpenFileToAVFormatContext {
 }
 
 impl OpenFileToAVFormatContext for AVFormatContext {
-    fn open_file(path: impl Into<String>, format: Option<&AVInputFormat>) -> Result<Self> {
+    fn open_file(path: impl AsRef<Path>, format: Option<&AVInputFormat>) -> Result<Self> {
         let mut av_format_context = unsafe {
             avformat_alloc_context()
         };
-        let path = CString::new(path.into().as_str())?;
+
+        let path = CString::new(
+            path
+                .as_ref()
+                .to_str()
+                .ok_or(anyhow!("Fail to parse path."))?
+        )?;
 
         ffmpeg! {
             avformat_open_input(

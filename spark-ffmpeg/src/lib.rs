@@ -12,7 +12,7 @@ pub mod av_mem_alloc;
 pub mod avpacket;
 pub mod pixel;
 pub mod avstream;
-pub mod pixformat;
+pub mod ffi_enum;
 pub mod avfilter_graph;
 pub mod avfilter_context;
 mod av_rational;
@@ -24,5 +24,5 @@ pub trait DeepClone {
 }
 
 pub trait CloneFrom<T> {
-    fn clone_copy_fields(&mut self, other: &T);
+    fn clone_fields_from(&mut self, other: &T);
 }

@@ -3,8 +3,8 @@ use crate::Image;
 use anyhow::{anyhow, bail, Result};
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
 use spark_ffmpeg::avframe::AVFrame;
-use spark_ffmpeg::avstream::AVCodecID;
-use spark_ffmpeg::pixformat::AVPixelFormat;
+use spark_ffmpeg::ffi_enum::AVCodecID;
+use spark_ffmpeg::ffi_enum::AVPixelFormat;
 use std::path::Path;
 
 impl Image {
@@ -18,20 +18,19 @@ impl Image {
         let frame = {
             let mut frame = AVFrame::new()?;
             frame.set_size(size);
+            frame.set_format(pixel_format);
             frame.alloc_image(pixel_format)?;
             frame
-        };
-
-        let inner = ImageInner {
-            packet: None,
-            frame,
         };
 
         Ok(Image {
             decoder: None,
             encoder: Some(codec_context),
             utils: Default::default(),
-            inner
+            inner: ImageInner {
+                packet: None,
+                frame,
+            }
         })
     }
 
@@ -57,7 +56,7 @@ impl Image {
             let extension = extension.to_ascii_uppercase();
             let extension = extension.to_str().ok_or(anyhow!("Fail to cast extension to str."))?;
             let id = match extension {
-                "PNG" => 61,
+                "PNG" => AVCodecID::Png,
                 _ => bail!("UNKNOWN FILE FORMAT")
             };
             self.try_encoder(Some(id))?;

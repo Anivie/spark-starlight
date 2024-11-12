@@ -5,18 +5,21 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.22"
-cudarc = { version = "0.12.1", features = ["cuda-12050", "cudnn"] }
 
 rayon = "1.10.0"
 bitvec = "1.0.1"
 
-anyhow = "1.0.92"
+anyhow = "1.0.93"
 
 blas-src = { version = "0.10", features = ["openblas"] }
 openblas-src = { version = "0.10", features = ["cblas", "system"] }
 
+cudarc = { version = "0.12.1", features = ["cuda-12050", "cudnn"] }
+
 spark-ffmpeg = { path = "../spark-ffmpeg" }
 spark-media = { path = "../spark-media" }
+
+ndarray-npy = "0.9.1"
 
 [dependencies.ndarray]
 version = "0.16.1"

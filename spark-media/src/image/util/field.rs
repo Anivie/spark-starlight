@@ -1,8 +1,7 @@
 use crate::Image;
 use anyhow::{anyhow, Result};
 use spark_ffmpeg::avcodec::{AVCodec, AVCodecContext};
-use spark_ffmpeg::avstream::AVCodecID;
-use spark_ffmpeg::pixformat::AVPixelFormat;
+use spark_ffmpeg::ffi_enum::{AVCodecID, AVPixelFormat};
 use std::mem::ManuallyDrop;
 
 impl Image {
@@ -11,13 +10,10 @@ impl Image {
             .unwrap_or_else(|| self.decoder.as_ref().expect("At least one codec must be available"))
     }
 
-    pub(crate) fn try_encoder(&mut self, codec_id: Option<u32>) -> Result<&AVCodecContext> {
+    pub(crate) fn try_encoder(&mut self, codec_id: Option<AVCodecID>) -> Result<&AVCodecContext> {
         if self.encoder.is_none() {
             let encoder = AVCodec::new_encoder_with_id(
-                codec_id
-                    .unwrap_or_else(
-                        || self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist.")).unwrap().id()
-                    )
+                codec_id.unwrap_or_else(|| self.decoder.as_ref().ok_or(anyhow!("Init encoder need decoder exist.")).unwrap().id())
             )?;
 
             let context = AVCodecContext::from_frame(&encoder, &self.inner.frame, None)?;
@@ -27,13 +23,10 @@ impl Image {
         Ok(self.encoder.as_ref().unwrap())
     }
 
-    pub(crate) fn try_decoder(&mut self, codec_id: Option<u32>) -> Result<&AVCodecContext> {
+    pub(crate) fn try_decoder(&mut self, codec_id: Option<AVCodecID>) -> Result<&AVCodecContext> {
         if self.decoder.is_none() {
             let decoder = AVCodec::new_decoder_with_id(
-                codec_id
-                    .unwrap_or_else(
-                        || self.encoder.as_ref().ok_or(anyhow!("Init decoder need encoder exist.")).unwrap().id()
-                    )
+                codec_id.unwrap_or_else(|| self.encoder.as_ref().ok_or(anyhow!("Init decoder need encoder exist.")).unwrap().id())
             )?;
 
             let context = AVCodecContext::from_frame(&decoder, &self.inner.frame, None)?;

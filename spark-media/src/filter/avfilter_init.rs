@@ -1,7 +1,7 @@
 use crate::filter::filter::{AVFilter, Locked, UnLocked};
 use anyhow::Result;
 use spark_ffmpeg::avfilter_graph::AVFilterGraph;
-use spark_ffmpeg::pixformat::AVPixelFormat;
+use spark_ffmpeg::ffi_enum::AVPixelFormat;
 use std::marker::PhantomData;
 use spark_ffmpeg::avframe::AVFrame;
 

@@ -111,7 +111,7 @@ pub fn clone_from(token_stream: TokenStream) -> TokenStream {
 
     TokenStream::from(quote! {
         impl crate::CloneFrom<#name> for #name {
-            fn clone_copy_fields(&mut self, other: &Self) {
+            fn clone_fields_from(&mut self, other: &Self) {
                 #(
                     self.#field_name = other.#field_name.clone();
                 )*

@@ -1,7 +1,7 @@
 use crate::avcodec::AVCodecContext;
 use crate::avframe::AVFrame;
 use crate::ffi::{sws_getContext, sws_scale, SWS_BILINEAR};
-use crate::pixformat::AVPixelFormat;
+use crate::ffi_enum::AVPixelFormat;
 use crate::sws::SwsContext;
 use anyhow::{bail, Result};
 use std::ptr::null_mut;

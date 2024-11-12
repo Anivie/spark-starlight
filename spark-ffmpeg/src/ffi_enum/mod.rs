@@ -1,4 +1,8 @@
-use num_enum::TryFromPrimitive;
+include!(concat!(env!("OUT_DIR"), "/codec_id.rs"));
+include!(concat!(env!("OUT_DIR"), "/pixel.rs"));
+
+
+/*use num_enum::TryFromPrimitive;
 
 #[repr(i32)]
 #[derive(TryFromPrimitive, Copy, Clone, PartialEq, Debug)]
@@ -233,4 +237,4 @@ pub enum AVPixelFormat {
      AvPixFmtGbrap14le = 226 ,
      AvPixFmtD3d12 = 227 ,
      AvPixFmtNb = 228 ,
-}
+}*/

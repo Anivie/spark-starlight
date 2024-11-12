@@ -1,3 +1,4 @@
+use std::path::Path;
 use crate::image::util::image_inner::ImageInner;
 use crate::image::util::image_util::ImageUtil;
 use crate::{Image, CODEC};
@@ -10,7 +11,7 @@ use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::avpacket::AVPacket;
 
 impl Image {
-    pub fn open_file(path: impl Into<String>) -> Result<Self> {
+    pub fn open_file(path: impl AsRef<Path>) -> Result<Self> {
         let mut format = AVFormatContext::open_file(path, None)?;
         let codec_context = format.video_stream()?.map(|(_, stream)| {
             let id = stream.codec_id();

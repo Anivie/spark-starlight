@@ -1,11 +1,10 @@
 use crate::ffi::AVStream;
-
-pub type AVCodecID = u32;
+use crate::ffi_enum::AVCodecID;
 
 impl AVStream {
     pub fn codec_id(&self) -> AVCodecID {
         unsafe {
-            (*self.codecpar).codec_id
+            AVCodecID::try_from((*self.codecpar).codec_id).unwrap()
         }
     }
 }

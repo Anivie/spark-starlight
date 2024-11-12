@@ -1,6 +1,5 @@
 macro_rules! new_cuda {
     (
-        [$model_name: literal],
         $(
             $name: ident => $source_code: literal,
         )*
@@ -36,7 +35,7 @@ macro_rules! new_cuda {
                 $(
                     device.load_ptx(
                         compile_ptx($source_code)?,
-                        $model_name,
+                        concat!(file!(), ":", stringify!($name)),
                         &[stringify!($name)],
                     )?;
                 )*
@@ -44,8 +43,8 @@ macro_rules! new_cuda {
                 Ok(Self {
                     $(
                         $name: device
-                            .get_func($model_name, stringify!($name))
-                            .ok_or(anyhow!("Could not get function: {} from model: {}", stringify!($name), $model_name))?,
+                            .get_func(concat!(file!(), ":", stringify!($name)), stringify!($name))
+                            .ok_or(anyhow!("Could not get function: {}.", stringify!($name)))?,
                     )*
                     device,
                 })

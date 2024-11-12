@@ -2,7 +2,7 @@ use crate::avcodec::codec::codec_parameter::AVCodecParameters;
 use crate::avcodec::{AVCodec, AVCodecContext};
 use crate::avframe::AVFrame;
 use crate::ffi::{avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, AVDictionary, AVRational, AVStream};
-use crate::pixformat::AVPixelFormat;
+use crate::ffi_enum::AVPixelFormat;
 use crate::DeepClone;
 use anyhow::{bail, Result};
 use std::ptr::{null, null_mut};
@@ -74,9 +74,6 @@ impl AVCodecContext {
             (*ptr).codec = other.codec;
         }
         
-        println!("codec id: {:?}", parameter.codec_id);
-        unsafe { println!("codec: {:?}", (*ptr).codec); }
-
         ffmpeg! {
             avcodec_open2(
                 ptr,
@@ -138,23 +135,4 @@ impl DeepClone for AVCodecContext {
         let new = AVCodecContext::copy_into(self)?;
         Ok(new)
     }
-}
-
-
-#[test]
-fn test_codec_context() {
-    use crate::avformat::avformat_context::OpenFileToAVFormatContext;
-    use crate::ffi::AVCodecID_AV_CODEC_ID_PNG;
-    use crate::avformat::AVFormatContext;
-
-    let mut format_context = AVFormatContext::open_file("./data/a.png", None).unwrap();
-    format_context.video_stream().unwrap().for_each(|(_, x)| {
-        let codec = AVCodec::new_decoder(x).unwrap();
-        let ctx = AVCodecContext::from_stream(&codec, x, None).unwrap();
-
-        let buffer_size = ctx.buffer_size(AVPixelFormat::AvPixFmtRgb24).unwrap();
-        println!("buffer_size: {:?}", buffer_size);
-        println!("codec_id: {:?}", ctx.codec_id);
-        assert_eq!(ctx.codec_id, AVCodecID_AV_CODEC_ID_PNG);
-    });
 }
