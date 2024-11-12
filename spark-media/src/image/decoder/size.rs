@@ -1,6 +1,5 @@
 use crate::Image;
 use anyhow::{anyhow, Result};
-use rayon::prelude::*;
 use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::sws::SwsContext;
 

@@ -4,8 +4,6 @@ macro_rules! new_cuda {
             $name: ident => $source_code: literal,
         )*
     ) => {
-        use std::collections::HashMap;
-        use std::hash::Hash;
         use std::ops::Deref;
         use std::sync::Arc;
         use anyhow::{anyhow, Result};

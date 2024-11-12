@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 #![cfg_attr(debug_assertions, allow(warnings))]
 
 pub mod engine;

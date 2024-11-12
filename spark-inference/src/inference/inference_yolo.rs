@@ -4,7 +4,7 @@ use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaDevice, DevicePtr};
 use log::debug;
-use ndarray::{s, Axis, CowArray, Dim, Ix, Ix2, Ix3};
+use ndarray::{s, Axis, Ix2, Ix3};
 use ort::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType, TensorRefMut};
 use rayon::prelude::*;
 use std::cmp::Ordering;

@@ -10,23 +10,6 @@ use spark_inference::utils::masks::ApplyMask;
 use spark_media::{Image, RGB};
 use spark_media::filter::filter::AVFilter;
 
-fn maind() -> Result<()> {
-    use ndarray::prelude::*;
-
-    fn rgb_to_channels(rgb_data: Array1<u8>) -> Array2<u8> {
-        let n = rgb_data.len() / 3;  // 计算RGB组的数量
-        rgb_data.to_shape((n, 3)).unwrap().t().to_owned()
-    }
-
-    let rgb_data = array![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-
-    let channels = rgb_to_channels(rgb_data);
-
-    println!("{:?}", channels);
-    println!("{:?}", concat!(file!(), ":", "name"));
-
-    Ok(())
-}
 fn main() -> Result<()> {
     init_inference_engine()?;
 
