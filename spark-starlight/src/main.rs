@@ -51,10 +51,10 @@ fn main() -> Result<()> {
 
     let sam2 = SAM2InferenceSession::new(image_encoder, image_decoder, memory_attention, memory_encoder);
 
-    let path = "./data/image/a.png";
+    let path = "./data/image/brid1.png";
     let mut image = Image::open_file(path)?;
 
-    let result = sam2.inference_sam(vec![Point { x: 1000, y: 700 }], &mut image)?;
+    let result = sam2.inference_sam(vec![Point { x: 96, y: 984 }], &mut image)?;
 
     let mut image = Image::open_file(path)?;
     let filter = {

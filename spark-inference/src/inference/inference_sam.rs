@@ -4,7 +4,7 @@ use crate::INFERENCE_CUDA;
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
-use ndarray::{array, Array1, Array2, Array3, ArrayViewD};
+use ndarray::{array, Array1, Array2, Array3, Array4, ArrayViewD};
 use ort::{inputs, AllocationDevice, AllocatorType, MemoryInfo, MemoryType, SessionInputValue, SessionOutputs, TensorRefMut};
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
@@ -50,27 +50,42 @@ impl SamModelInference for SAM2InferenceSession {
 
         let encoder_output = self.inference_image_encoder(image.raw_data()?.deref())?;
 
+        /*let memory_attention_output = self.inference_memory_attention(
+            encoder_output["vision_feats"].try_extract_tensor::<f32>()?.view(),
+            encoder_output["vision_pos_embed"].try_extract_tensor::<f32>()?.view(),
+            vec![]
+        )?;*/
+
         let decoder_output = self.inference_image_decoder(
+            image_size,
             encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
             encoder_output["high_res_feat0"].try_extract_tensor::<f32>()?,
             encoder_output["high_res_feat1"].try_extract_tensor::<f32>()?,
             points,
-            image_size
         )?;
 
-        let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
-
-        /*let memory_encoder_output = self.inference_memory_encoder(
+/*        let memory_encoder_output = self.inference_memory_encoder(
             decoder_output["mask_for_mem"].try_extract_tensor::<f32>()?.view(),
             encoder_output["pix_feat"].try_extract_tensor::<f32>()?.view()
-        )?;*/
+        )?;
 
-        let mut back = BitVec::with_capacity((image.get_width() * image.get_height()) as usize);
+        let position_encoded = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
+        let position_encoded = position_encoded.to_shape((4096, 1, 64))?;
+        let time_code = memory_encoder_output["temporal_code"].try_extract_tensor::<f32>()?;
+        let time_code = time_code.to_shape((7, 1, 1, 64))?;
+        let time_code = time_code.to_shape((7, 1, 64))?;
+        let time_code = concatenate![Axis(0), time_code, Array3::zeros((4096 - 7, 1, 64))];
+        let memory_pos_embed = position_encoded + time_code;
+*/
 
-        println!("shape: {:?}", pred_mask.shape());
-        pred_mask.iter().for_each(|x| {
-            back.push(*x > 0f32);
-        });
+        let back = {
+            let mut back = BitVec::with_capacity((image.get_width() * image.get_height()) as usize);
+            let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
+            pred_mask.iter().for_each(|x| {
+                back.push(*x > 0f32);
+            });
+            back
+        };
 
         Ok(back)
     }
@@ -108,6 +123,26 @@ impl SAM2InferenceSession {
         Ok(self.image_encoder.run(vec![("image", SessionInputValue::from(tensor))])?)
     }
 
+    fn inference_memory_attention(
+        &self,
+        vision_feats: Array4<f32>, //Every vision_feats for encoder output in each round
+        vision_pos_embed: Array3<f32>, //Every vision_pos_embed for encoder output in each round
+
+        object_memory: Array2<f32>, //Every obj_ptr for decoder output in each round
+        mask_memory: Array4<f32>, //Every maskmem_features for memory encoder output in each round
+        mask_position_embedded: Array4<f32>, //Every maskmem_features for decoder output in each round
+    ) -> Result<SessionOutputs> {
+        let result = self.memory_attention.run(inputs![
+            "current_vision_feat" => vision_feats,
+            "current_vision_pos_embed" => vision_pos_embed,
+            "memory_0" => object_memory,
+            "memory_1" => mask_memory,
+            "memory_pos_embed" => mask_position_embedded,
+        ]?)?;
+
+        Ok(result)
+    }
+
     fn inference_memory_encoder(
         &self,
         mask_for_mem: ArrayViewD<f32>,
@@ -123,13 +158,13 @@ impl SAM2InferenceSession {
 
     fn inference_image_decoder(
         &self,
+        image_size: (i32, i32),
 
         feats: ArrayViewD<f32>,
         feat0: ArrayViewD<f32>,
         feat1: ArrayViewD<f32>,
 
         points: Vec<Point<u32>>,
-        image_size: (i32, i32),
     ) -> Result<SessionOutputs> {
         let point_labels = Array2::from_shape_vec(
             (1, points.len()), vec![1_f32; points.len()]
