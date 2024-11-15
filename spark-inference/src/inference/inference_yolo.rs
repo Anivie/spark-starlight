@@ -5,10 +5,11 @@ use bitvec::prelude::*;
 use cudarc::driver::{CudaDevice, DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::debug;
 use ndarray::{s, Axis, Ix2, Ix3};
-use ort::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType, TensorRefMut};
 use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::ops::Deref;
+use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
+use ort::value::TensorRefMut;
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
 use crate::inference::{linear_interpolate, sigmoid};
@@ -28,13 +29,11 @@ pub struct YoloInferenceResult {
 
 impl YoloModelInference for OnnxSession {
     fn inference_yolo(&self, mut image: Image, conf_thres: f32, iou_thres: f32) -> Result<Vec<YoloInferenceResult>> {
-        let filter = {
-            let mut filter = AVFilter::new(image.pixel_format()?, image.get_size())?;
-            filter.add_context("scale", "640:640:force_original_aspect_ratio=decrease")?;
-            filter.add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?;
-            filter.add_context("format", "rgb24")?;
-            filter.lock()?
-        };
+        let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+            .add_context("scale", "640:640:force_original_aspect_ratio=decrease")?
+            .add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?
+            .add_context("format", "rgb24")?
+            .build()?;
         image.apply_filter(&filter)?;
 
         let tensor = {

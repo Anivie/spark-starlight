@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use anyhow::Result;
-use ort::Session;
+use ort::session::Session;
 use std::path::Path;
 
 pub struct OnnxSession {
@@ -27,8 +27,8 @@ impl OnnxSession {
             .with_execution_providers(
                 [
                     match executor {
-                        ExecutionProvider::CUDA => ort::CUDAExecutionProvider::default().build().error_on_failure(),
-                        ExecutionProvider::TensorRT => ort::TensorRTExecutionProvider::default().build().error_on_failure()
+                        ExecutionProvider::CUDA => ort::execution_providers::CUDAExecutionProvider::default().build().error_on_failure(),
+                        ExecutionProvider::TensorRT => ort::execution_providers::TensorRTExecutionProvider::default().build().error_on_failure()
                     }
                 ]
             )?

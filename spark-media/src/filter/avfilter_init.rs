@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use spark_ffmpeg::avframe::AVFrame;
 
 impl AVFilter {
-    pub fn new(pixel_format: AVPixelFormat, in_size: (i32, i32)) -> Result<AVFilter<UnLocked>> {
+    pub fn builder(pixel_format: AVPixelFormat, in_size: (i32, i32)) -> Result<AVFilter<UnLocked>> {
         let mut graph = AVFilterGraph::new()?;
 
         let arg = format!(
@@ -31,13 +31,13 @@ impl AVFilter<Locked> {
 }
 
 impl AVFilter<UnLocked> {
-    pub fn add_context(&mut self, filter_name: &'static str, args: &'static str) -> Result<()> {
+    pub fn add_context(mut self, filter_name: &'static str, args: &'static str) -> Result<Self> {
         self.inner.add_context(filter_name, args)?;
 
-        Ok(())
+        Ok(self)
     }
 
-    pub fn lock(mut self) -> Result<AVFilter<Locked>> {
+    pub fn build(mut self) -> Result<AVFilter<Locked>> {
         self.inner.add_context_with_name("buffersink", "out", None)?;
         self.inner.link()?;
 

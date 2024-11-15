@@ -1,8 +1,9 @@
 use ndarray::{Array2, CowArray, Dim, Ix};
 
 pub mod inference_yolo;
-pub mod inference_sam;
-mod sam_former_state;
+pub mod sam_video_inference;
+pub mod sam_former_state;
+pub mod sam_image_inference;
 
 pub(super) fn linear_interpolate(input: &CowArray<f32, Dim<[Ix; 2]>>, new_shape: (usize, usize)) -> Array2<f32> {
     let (old_height, old_width) = input.dim();

@@ -2,9 +2,12 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
 
 use anyhow::Result;
+use ndarray::{array, concatenate, s, Axis};
 use spark_inference::engine::inference_engine::{ExecutionProvider, OnnxSession};
-use spark_inference::inference::inference_sam::{SAM2InferenceSession, SamModelInference};
 use spark_inference::inference::inference_yolo::YoloModelInference;
+use spark_inference::inference::sam_former_state::InferenceType;
+use spark_inference::inference::sam_image_inference::{SAM2ImageInferenceSession, SamImageInference};
+use spark_inference::inference::sam_video_inference::{SAM2VideoInferenceSession, SamVideoInference};
 use spark_inference::utils::graph::Point;
 use spark_inference::utils::masks::ApplyMask;
 use spark_media::{Image, RGB};
@@ -20,13 +23,11 @@ fn main_yolo() -> Result<()> {
     println!("{:?}", results.len());
 
     let mut image = Image::open_file(path)?;
-    let filter = {
-        let mut filter = AVFilter::new(image.pixel_format()?, image.get_size())?;
-        filter.add_context("scale", "640:640:force_original_aspect_ratio=decrease")?;
-        filter.add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?;
-        filter.add_context("format", "rgb24")?;
-        filter.lock()?
-    };
+    let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+        .add_context("scale", "640:640:force_original_aspect_ratio=decrease")?
+        .add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?
+        .add_context("format", "rgb24")?
+        .build()?;
     image.apply_filter(&filter)?;
 
     for result in results {
@@ -38,30 +39,84 @@ fn main_yolo() -> Result<()> {
     Ok(())
 }
 
+fn maind() -> Result<()> {
+    let arr1 = array![
+            [1., 2., 3.],
+            [4., 5., 6.],
+            [7., 8., 9.]
+    ];
+    let arr2 = array![
+            [10., 11., 12.],
+            [13., 14., 15.],
+            [16., 17., 18.]
+    ];
+
+    let arr3 = concatenate![Axis(0), arr1, arr2];
+    println!("{:?}", arr3);
+    println!("{:?}", arr3.shape()[0]);
+    println!("{:?}", arr3.shape()[1]);
+
+    if arr3.shape()[0] >= 6 {
+        let arr4 = arr3.slice(s![1.., ..]).to_owned();
+        println!("{:?}", arr4);
+    }
+
+    Ok(())
+}
 fn main() -> Result<()> {
-    let image_encoder = OnnxSession::new("./data/model/image_encoder.onnx", ExecutionProvider::CUDA)?;
-    let image_decoder = OnnxSession::new("./data/model/image_decoder.onnx", ExecutionProvider::CUDA)?;
-    let memory_attention = OnnxSession::new("./data/model/memory_attention.onnx", ExecutionProvider::CUDA)?;
-    let memory_encoder = OnnxSession::new("./data/model/memory_encoder.onnx", ExecutionProvider::CUDA)?;
-
-    println!("image_encoder: {:?} ======== out: {:?}\n", image_encoder.inputs, image_encoder.outputs);
-    println!("image_decoder: {:?} ======== out: {:?}\n", image_decoder.inputs, image_decoder.outputs);
-    println!("memory_attention: {:?} ======== out: {:?}\n", memory_attention.inputs, memory_attention.outputs);
-    println!("memory_encoder: {:?} ======== out: {:?}\n", memory_encoder.inputs, memory_encoder.outputs);
-
-    let sam2 = SAM2InferenceSession::new(image_encoder, image_decoder, memory_attention, memory_encoder);
+    let sam2 = SAM2VideoInferenceSession::new("./data/model")?;
 
     let path = "./data/image/brid1.png";
     let mut image = Image::open_file(path)?;
 
-    let result = sam2.inference_sam(vec![Point { x: 96, y: 984 }], &mut image)?;
+    let result = sam2.inference_sam(
+        InferenceType::First(vec![Point { x: 96, y: 984 }]),
+        &mut image
+    )?;
 
     let mut image = Image::open_file(path)?;
-    let filter = {
-        let mut filter = AVFilter::new(image.pixel_format()?, image.get_size())?;
-        filter.add_context("format", "rgb24")?;
-        filter.lock()?
-    };
+    let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+        .add_context("format", "rgb24")?
+        .build()?;
+
+    image.apply_filter(&filter)?;
+    image.layering_mask(&result.mask, RGB(200, 0, 0))?;
+    image.save_with_format("./data/out/a_out.png")?;
+
+
+    let path = "./data/image/brid2.png";
+    let mut image = Image::open_file(path)?;
+
+    let result = sam2.inference_sam(
+        InferenceType::WithState(result.state),
+        &mut image
+    )?;
+
+    let mut image = Image::open_file(path)?;
+    let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+        .add_context("format", "rgb24")?
+        .build()?;
+
+    image.apply_filter(&filter)?;
+    image.layering_mask(&result.mask, RGB(200, 0, 0))?;
+    image.save_with_format("./data/out/b_out.png")?;
+
+    Ok(())
+}
+
+fn main_image() -> Result<()> {
+    let sam2 = SAM2ImageInferenceSession::new("./data/model")?;
+
+    let path = "./data/image/brid1.png";
+    let mut image = Image::open_file(path)?;
+
+    let result = sam2.inference_sam(vec![Point { x: 92, y: 983 }], &mut image)?;
+
+    let mut image = Image::open_file(path)?;
+    let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+        .add_context("format", "rgb24")?
+        .build()?;
+
     image.apply_filter(&filter)?;
     image.layering_mask(&result, RGB(200, 0, 0))?;
     image.save_with_format("./data/out/a_out.png")?;

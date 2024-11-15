@@ -1,86 +1,64 @@
-use crate::engine::inference_engine::OnnxSession;
+use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use crate::utils::graph::Point;
 use crate::INFERENCE_CUDA;
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
-use ndarray::{array, Array1, Array2, Array3, Array4, ArrayViewD};
-use ort::{inputs, AllocationDevice, AllocatorType, MemoryInfo, MemoryType, SessionInputValue, SessionOutputs, TensorRefMut};
+use ndarray::{array, Array1, Array2, Array3, ArrayViewD};
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
 use std::ops::Deref;
+use std::path::Path;
 use std::sync::LazyLock;
+use ort::inputs;
+use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
+use ort::session::{SessionInputValue, SessionOutputs};
+use ort::value::TensorRefMut;
 
-pub trait SamModelInference {
+pub trait SamImageInference {
     fn inference_sam(&self, points: Vec<Point<u32>>, image: &mut Image) -> Result<BitVec>;
 }
 
-pub struct SAM2InferenceSession {
+pub struct SAM2ImageInferenceSession {
     image_encoder: OnnxSession,
     image_decoder: OnnxSession,
-    memory_attention: OnnxSession,
-    memory_encoder: OnnxSession,
 }
 
-impl SAM2InferenceSession {
-    pub fn new(
-        image_encoder: OnnxSession, image_decoder: OnnxSession,
-        memory_attention: OnnxSession, memory_encoder: OnnxSession
-    ) -> Self {
-        Self {
-            image_encoder,
-            image_decoder,
-            memory_attention,
-            memory_encoder,
-        }
+impl SAM2ImageInferenceSession {
+    pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
+        Ok(Self {
+            image_encoder: OnnxSession::new(folder_path.as_ref().join("image_encoder.onnx"), ExecutionProvider::CUDA)?,
+            image_decoder: OnnxSession::new(folder_path.as_ref().join("image_decoder.onnx"), ExecutionProvider::CUDA)?,
+        })
     }
 }
 
-impl SamModelInference for SAM2InferenceSession {
+impl SamImageInference for SAM2ImageInferenceSession {
     fn inference_sam(&self, points: Vec<Point<u32>>, image: &mut Image) -> Result<BitVec> {
-        let filter = {
-            let mut filter = AVFilter::new(image.pixel_format()?, image.get_size())?;
-            filter.add_context("scale", "1024:1024")?;
-            filter.add_context("format", "rgb24")?;
-            filter.lock()?
+        let (image, image_size) = {
+            let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+                .add_context("scale", "1024:1024")?
+                .add_context("format", "rgb24")?
+                .build()?;
+
+            let image_size = image.get_size();
+            image.apply_filter(&filter)?;
+            (image, image_size)
         };
 
-        let image_size = image.get_size();
-        image.apply_filter(&filter)?;
-
         let encoder_output = self.inference_image_encoder(image.raw_data()?.deref())?;
-
-        /*let memory_attention_output = self.inference_memory_attention(
-            encoder_output["vision_feats"].try_extract_tensor::<f32>()?.view(),
-            encoder_output["vision_pos_embed"].try_extract_tensor::<f32>()?.view(),
-            vec![]
-        )?;*/
 
         let decoder_output = self.inference_image_decoder(
             image_size,
             encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
             encoder_output["high_res_feat0"].try_extract_tensor::<f32>()?,
             encoder_output["high_res_feat1"].try_extract_tensor::<f32>()?,
-            points,
+            &points,
         )?;
-
-/*        let memory_encoder_output = self.inference_memory_encoder(
-            decoder_output["mask_for_mem"].try_extract_tensor::<f32>()?.view(),
-            encoder_output["pix_feat"].try_extract_tensor::<f32>()?.view()
-        )?;
-
-        let position_encoded = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
-        let position_encoded = position_encoded.to_shape((4096, 1, 64))?;
-        let time_code = memory_encoder_output["temporal_code"].try_extract_tensor::<f32>()?;
-        let time_code = time_code.to_shape((7, 1, 1, 64))?;
-        let time_code = time_code.to_shape((7, 1, 64))?;
-        let time_code = concatenate![Axis(0), time_code, Array3::zeros((4096 - 7, 1, 64))];
-        let memory_pos_embed = position_encoded + time_code;
-*/
 
         let back = {
-            let mut back = BitVec::with_capacity((image.get_width() * image.get_height()) as usize);
             let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
+            let mut back = BitVec::with_capacity((image.get_width() * image.get_height()) as usize);
             pred_mask.iter().for_each(|x| {
                 back.push(*x > 0f32);
             });
@@ -91,7 +69,7 @@ impl SamModelInference for SAM2InferenceSession {
     }
 }
 
-impl SAM2InferenceSession {
+impl SAM2ImageInferenceSession {
     fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<SessionOutputs> {
         static MEAN: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
             INFERENCE_CUDA.htod_sync_copy(&[0.485, 0.456, 0.406]).unwrap()
@@ -123,39 +101,6 @@ impl SAM2InferenceSession {
         Ok(self.image_encoder.run(vec![("image", SessionInputValue::from(tensor))])?)
     }
 
-    fn inference_memory_attention(
-        &self,
-        vision_feats: Array4<f32>, //Every vision_feats for encoder output in each round
-        vision_pos_embed: Array3<f32>, //Every vision_pos_embed for encoder output in each round
-
-        object_memory: Array2<f32>, //Every obj_ptr for decoder output in each round
-        mask_memory: Array4<f32>, //Every maskmem_features for memory encoder output in each round
-        mask_position_embedded: Array4<f32>, //Every maskmem_features for decoder output in each round
-    ) -> Result<SessionOutputs> {
-        let result = self.memory_attention.run(inputs![
-            "current_vision_feat" => vision_feats,
-            "current_vision_pos_embed" => vision_pos_embed,
-            "memory_0" => object_memory,
-            "memory_1" => mask_memory,
-            "memory_pos_embed" => mask_position_embedded,
-        ]?)?;
-
-        Ok(result)
-    }
-
-    fn inference_memory_encoder(
-        &self,
-        mask_for_mem: ArrayViewD<f32>,
-        pix_feat: ArrayViewD<f32>,
-    ) -> Result<SessionOutputs> {
-        let result = self.memory_encoder.run(inputs![
-            "mask_for_mem" => mask_for_mem,
-            "pix_feat" => pix_feat,
-        ]?)?;
-
-        Ok(result)
-    }
-
     fn inference_image_decoder(
         &self,
         image_size: (i32, i32),
@@ -164,7 +109,7 @@ impl SAM2InferenceSession {
         feat0: ArrayViewD<f32>,
         feat1: ArrayViewD<f32>,
 
-        points: Vec<Point<u32>>,
+        points: &Vec<Point<u32>>,
     ) -> Result<SessionOutputs> {
         let point_labels = Array2::from_shape_vec(
             (1, points.len()), vec![1_f32; points.len()]
