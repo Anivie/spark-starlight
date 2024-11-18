@@ -31,6 +31,13 @@ impl SAM2ImageInferenceSession {
             image_decoder: OnnxSession::new(folder_path.as_ref().join("image_decoder.onnx"), ExecutionProvider::CUDA)?,
         })
     }
+
+    pub(super) fn raw(image_encoder: OnnxSession, image_decoder: OnnxSession) -> Self {
+        Self {
+            image_encoder,
+            image_decoder,
+        }
+    }
 }
 
 impl SamImageInference for SAM2ImageInferenceSession {
@@ -70,7 +77,7 @@ impl SamImageInference for SAM2ImageInferenceSession {
 }
 
 impl SAM2ImageInferenceSession {
-    fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<SessionOutputs> {
+    pub(crate) fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<SessionOutputs> {
         static MEAN: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
             INFERENCE_CUDA.htod_sync_copy(&[0.485, 0.456, 0.406]).unwrap()
         });
@@ -101,7 +108,7 @@ impl SAM2ImageInferenceSession {
         Ok(self.image_encoder.run(vec![("image", SessionInputValue::from(tensor))])?)
     }
 
-    fn inference_image_decoder(
+    pub(crate) fn inference_image_decoder(
         &self,
         image_size: (i32, i32),
 

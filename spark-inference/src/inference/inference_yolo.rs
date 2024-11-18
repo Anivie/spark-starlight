@@ -2,12 +2,11 @@ use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::OnnxSession;
 use anyhow::Result;
 use bitvec::prelude::*;
-use cudarc::driver::{CudaDevice, DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
+use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::debug;
 use ndarray::{s, Axis, Ix2, Ix3};
 use rayon::prelude::*;
 use std::cmp::Ordering;
-use std::ops::Deref;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::value::TensorRefMut;
 use spark_media::filter::filter::AVFilter;
@@ -37,22 +36,31 @@ impl YoloModelInference for OnnxSession {
         image.apply_filter(&filter)?;
 
         let tensor = {
-            let tensor: TensorRefMut<'_, f32> = unsafe {
-                let buffer = INFERENCE_CUDA.htod_sync_copy(image.raw_data()?.as_slice())?;
-                let mut tensor = INFERENCE_CUDA.alloc::<f32>(buffer.len())?;
-                let cfg = LaunchConfig::for_num_elems((buffer.len() / 3) as u32);
+            let buffer = INFERENCE_CUDA.htod_sync_copy(image.raw_data()?.as_slice())?;
+            let cfg = LaunchConfig::for_num_elems((buffer.len() / 3) as u32);
 
-                INFERENCE_CUDA.normalise_pixel_div().launch(cfg, (&mut tensor, &buffer, buffer.len()))?;
+            let tensor: TensorRefMut<'_, f32> = unsafe {
+                let mut tensor = INFERENCE_CUDA.alloc::<f32>(buffer.len())?;
+
+                INFERENCE_CUDA
+                    .normalise_pixel_div()
+                    .launch(cfg, (
+                        &mut tensor,
+                        &buffer,
+                        buffer.len()
+                    ))?;
 
                 let back = TensorRefMut::from_raw(
                     MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
                     vec![1, 3, 640, 640],
                 )?;
-                INFERENCE_CUDA.synchronize()?;
 
                 back
             };
+
+            INFERENCE_CUDA.synchronize()?;
+
             tensor
         };
 

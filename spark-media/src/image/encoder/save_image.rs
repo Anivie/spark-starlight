@@ -57,7 +57,7 @@ impl Image {
             let extension = extension.to_str().ok_or(anyhow!("Fail to cast extension to str."))?;
             let id = match extension {
                 "PNG" => AVCodecID::Png,
-                _ => bail!("UNKNOWN FILE FORMAT")
+                _ => bail!("UNSUPPORTED FILE FORMAT")
             };
             self.try_encoder(Some(id))?;
         } else {

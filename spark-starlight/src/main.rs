@@ -1,13 +1,15 @@
 #![feature(let_chains)]
 #![cfg_attr(debug_assertions, allow(warnings))]
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use anyhow::Result;
-use ndarray::{array, concatenate, s, Axis};
 use spark_inference::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use spark_inference::inference::inference_yolo::YoloModelInference;
-use spark_inference::inference::sam_former_state::InferenceType;
-use spark_inference::inference::sam_image_inference::{SAM2ImageInferenceSession, SamImageInference};
-use spark_inference::inference::sam_video_inference::{SAM2VideoInferenceSession, SamVideoInference};
+use spark_inference::inference::sam::former_state::InferenceType;
+use spark_inference::inference::sam::image_inference::{SAM2ImageInferenceSession, SamImageInference};
+use spark_inference::inference::sam::video_inference::{SAM2VideoInferenceSession, SamVideoInference};
 use spark_inference::utils::graph::Point;
 use spark_inference::utils::masks::ApplyMask;
 use spark_media::{Image, RGB};
@@ -39,38 +41,14 @@ fn main_yolo() -> Result<()> {
     Ok(())
 }
 
-fn maind() -> Result<()> {
-    let arr1 = array![
-            [1., 2., 3.],
-            [4., 5., 6.],
-            [7., 8., 9.]
-    ];
-    let arr2 = array![
-            [10., 11., 12.],
-            [13., 14., 15.],
-            [16., 17., 18.]
-    ];
-
-    let arr3 = concatenate![Axis(0), arr1, arr2];
-    println!("{:?}", arr3);
-    println!("{:?}", arr3.shape()[0]);
-    println!("{:?}", arr3.shape()[1]);
-
-    if arr3.shape()[0] >= 6 {
-        let arr4 = arr3.slice(s![1.., ..]).to_owned();
-        println!("{:?}", arr4);
-    }
-
-    Ok(())
-}
 fn main() -> Result<()> {
     let sam2 = SAM2VideoInferenceSession::new("./data/model")?;
 
-    let path = "./data/image/brid1.png";
+    let path = "./data/image/bird1.png";
     let mut image = Image::open_file(path)?;
 
     let result = sam2.inference_sam(
-        InferenceType::First(vec![Point { x: 96, y: 984 }]),
+        InferenceType::First(vec![Point { x: 895, y: 554 }]),
         &mut image
     )?;
 
@@ -83,8 +61,7 @@ fn main() -> Result<()> {
     image.layering_mask(&result.mask, RGB(200, 0, 0))?;
     image.save_with_format("./data/out/a_out.png")?;
 
-
-    let path = "./data/image/brid2.png";
+    let path = "./data/image/bird2.png";
     let mut image = Image::open_file(path)?;
 
     let result = sam2.inference_sam(
