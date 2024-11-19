@@ -75,17 +75,6 @@ impl FormerState {
         let mask_memory = memory_encoder_output["maskmem_features"].try_extract_tensor::<f32>()?.to_owned();
         let mask_memory = mask_memory.into_dimensionality::<Ix4>()?;
 
-        /*let mask_mem_pos_enc = {
-            let position_encoded = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
-            let position_encoded = position_encoded.to_shape((4096, 1, 64))?;
-
-            let time_code = memory_encoder_output["temporal_code"].try_extract_tensor::<f32>()?;
-            let time_code = time_code.to_shape((7, 1, 64))?;
-            let mask_pos_embed = position_encoded + time_code.slice(s![0, .., ..]);
-            let mask_pos_embed = concatenate![Axis(0), mask_pos_embed, Array3::zeros((4 * object_memory.shape()[0], 1, 64))];
-            mask_pos_embed.into_dimensionality()?.to_owned()
-        };*/
-
         let mask_mem_pos_enc = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
         let mask_mem_pos_enc = mask_mem_pos_enc.to_shape((4096, 1, 64))?;
         let mask_mem_pos_enc = vec![mask_mem_pos_enc.to_owned()];
@@ -138,7 +127,7 @@ impl FormerState {
             let position_encoded = position_encoded.to_shape((4096, 1, 64))?.to_owned();
             let mut mask_mem_pos_enc = self.mask_mem_pos_enc;
 
-            if mask_mem_pos_enc.len() == 7 {
+            if mask_mem_pos_enc.len() > 7 {
                 mask_mem_pos_enc.remove(0);
             }
 
