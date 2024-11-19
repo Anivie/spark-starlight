@@ -51,12 +51,10 @@ impl FormerState {
             bail!("'memory_pos_embed' should not be called when mask_mem_pos_enc is empty!")
         }
 
-        let len = self.mask_mem_pos_enc.len();
-
         let mut back = &self.mask_mem_pos_enc[0] + &self.temporal_code.slice(s![0, .., ..]);
         back = concatenate![Axis(0), Array3::zeros((4, 1, 64)), back];
 
-        for index in 1..len {
+        for index in 1..self.mask_mem_pos_enc.len() {
             let mut tmp = &self.mask_mem_pos_enc[index] + &self.temporal_code.slice(s![index, .., ..]);
             tmp = concatenate![Axis(0), Array3::zeros((4, 1, 64)), tmp];
             back = concatenate![Axis(0), back, tmp];
