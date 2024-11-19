@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use bitvec::vec::BitVec;
 use ndarray::concatenate;
 use ndarray::prelude::*;
@@ -46,8 +46,11 @@ impl FormerState {
         &self.points
     }
 
-    pub fn memory_pos_embed(&self) -> Array3<f32> {
-        if self.mask_mem_pos_enc.is_empty() { panic!("'memory_pos_embed' should not be called when mask_mem_pos_enc is empty!") }
+    pub fn memory_pos_embed(&self) -> Result<Array3<f32>> {
+        if self.mask_mem_pos_enc.is_empty() {
+            bail!("'memory_pos_embed' should not be called when mask_mem_pos_enc is empty!")
+        }
+
         let len = self.mask_mem_pos_enc.len();
 
         let mut back = &self.mask_mem_pos_enc[0] + &self.temporal_code.slice(s![0, .., ..]);
@@ -61,7 +64,7 @@ impl FormerState {
             }
         }
 
-        back
+        Ok(back)
     }
 }
 

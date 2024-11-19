@@ -56,7 +56,7 @@ impl SamVideoInference for SAM2VideoInferenceSession {
                         encoder_output["vision_pos_embed"].try_extract_tensor::<f32>()?.view(),
                         state.object_memory(),
                         state.mask_memory(),
-                        &state.memory_pos_embed(),
+                        &state.memory_pos_embed()?,
                     )?;
 
                     memory_attention_output.replace(memory_attention_output_inner);
