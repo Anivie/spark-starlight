@@ -36,13 +36,16 @@ impl SAM2VideoInferenceSession {
 
 impl SamVideoInference for SAM2VideoInferenceSession {
     fn inference_sam(&self, types: InferenceType, image: &mut Image) -> Result<InferenceResult> {
-        let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
-            .add_context("scale", "1024:1024")?
-            .add_context("format", "rgb24")?
-            .build()?;
+        let (image, image_size) = {
+            let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+                .add_context("scale", "1024:1024")?
+                .add_context("format", "rgb24")?
+                .build()?;
 
-        let image_size = image.get_size();
-        image.apply_filter(&filter)?;
+            let image_size = image.get_size();
+            image.apply_filter(&filter)?;
+            (image, image_size)
+        };
 
         let encoder_output = self.image_session.inference_image_encoder(image.raw_data()?.deref())?;
 
@@ -89,8 +92,8 @@ impl SamVideoInference for SAM2VideoInferenceSession {
         };
 
         let mask = {
-            let mut back = BitVec::with_capacity((image.get_width() * image.get_height()) as usize);
             let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
+            let mut back = BitVec::with_capacity(pred_mask.len());
             pred_mask.iter().for_each(|x| {
                 back.push(*x > 0f32);
             });

@@ -65,7 +65,7 @@ impl SamImageInference for SAM2ImageInferenceSession {
 
         let back = {
             let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
-            let mut back = BitVec::with_capacity((image.get_width() * image.get_height()) as usize);
+            let mut back = BitVec::with_capacity(pred_mask.len());
             pred_mask.iter().for_each(|x| {
                 back.push(*x > 0f32);
             });
