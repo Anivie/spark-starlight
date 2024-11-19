@@ -36,24 +36,6 @@ impl SAM2VideoInferenceSession {
 
 impl SamVideoInference for SAM2VideoInferenceSession {
     fn inference_sam(&self, types: InferenceType, image: &mut Image) -> Result<InferenceResult> {
-        /*let current_vision_feat = Array4::zeros((1, 256, 64, 64));
-        let current_vision_pos_embed = Array3::zeros((4096,1,256));
-
-        let memory_0 = Array2::zeros((3, 256));
-        let memory_1 = Array4::zeros((3,64,64,64));
-        let memory_pos_embed = Array3::zeros((3*4096, 1, 64));
-        let memory_pos_embed = concatenate![ndarray::Axis(0), memory_pos_embed, Array3::zeros((memory_0.shape()[0] * 4, 1, 64))];
-
-        let memory_attention_output_inner = self.inference_memory_attention(
-            current_vision_feat.into_dyn().view(),
-            current_vision_pos_embed.into_dyn().view(),
-            &memory_0,
-            &memory_1,
-            &memory_pos_embed,
-        )?;
-        println!("{:?}", memory_attention_output_inner);
-        todo!();*/
-
         let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
             .add_context("scale", "1024:1024")?
             .add_context("format", "rgb24")?
@@ -69,15 +51,12 @@ impl SamVideoInference for SAM2VideoInferenceSession {
             match &types {
                 InferenceType::First(_) => encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
                 InferenceType::WithState(state) => {
-                    println!("object_memory: {:?}", state.object_memory().shape());
-                    println!("mask_memory: {:?}", state.mask_memory().shape());
-                    println!("mask_pos_embed: {:?}", state.mask_pos_embed().shape());
                     let memory_attention_output_inner = self.inference_memory_attention(
                         encoder_output["vision_feats"].try_extract_tensor::<f32>()?.view(),
                         encoder_output["vision_pos_embed"].try_extract_tensor::<f32>()?.view(),
                         state.object_memory(),
                         state.mask_memory(),
-                        state.mask_pos_embed(),
+                        &state.memory_pos_embed(),
                     )?;
 
                     memory_attention_output.replace(memory_attention_output_inner);

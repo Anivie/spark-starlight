@@ -27,7 +27,8 @@ impl InferenceType {
 pub struct FormerState {
     object_memory: Array2<f32>,//Every obj_ptr for decoder output in each round
     mask_memory: Array4<f32>,//Every maskmem_features for memory encoder output in each round
-    mask_pos_embed: Array3<f32>,//Every maskmem_features for decoder output in each round
+    mask_mem_pos_enc: Vec<Array3<f32>>,//Every maskmem_features for decoder output in each round
+    temporal_code: Array3<f32>,//Every maskmem_features for decoder output in each round
 
     points: Vec<Point<u32>>,
 }
@@ -41,12 +42,24 @@ impl FormerState {
         &self.mask_memory
     }
 
-    pub fn mask_pos_embed(&self) -> &Array3<f32> {
-        &self.mask_pos_embed
-    }
-
     pub fn points(&self) -> &Vec<Point<u32>> {
         &self.points
+    }
+
+    pub fn memory_pos_embed(&self) -> Array3<f32> {
+        if self.mask_mem_pos_enc.is_empty() { panic!("'memory_pos_embed' should not be called when mask_mem_pos_enc is empty!") }
+        let len = self.mask_mem_pos_enc.len();
+
+        let mut back = &self.mask_mem_pos_enc[0] + &self.temporal_code.slice(s![0, .., ..]);
+
+        if len > 1 {
+            for index in 1..len {
+                let tmp = &self.mask_mem_pos_enc[index] + &self.temporal_code.slice(s![index, .., ..]);
+                back = concatenate![Axis(0), back, tmp];
+            }
+        }
+
+        concatenate![Axis(0), back, Array3::zeros((4 * len, 1, 64))]
     }
 }
 
@@ -62,7 +75,7 @@ impl FormerState {
         let mask_memory = memory_encoder_output["maskmem_features"].try_extract_tensor::<f32>()?.to_owned();
         let mask_memory = mask_memory.into_dimensionality::<Ix4>()?;
 
-        let mask_pos_embed = {
+        /*let mask_mem_pos_enc = {
             let position_encoded = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
             let position_encoded = position_encoded.to_shape((4096, 1, 64))?;
 
@@ -71,12 +84,20 @@ impl FormerState {
             let mask_pos_embed = position_encoded + time_code.slice(s![0, .., ..]);
             let mask_pos_embed = concatenate![Axis(0), mask_pos_embed, Array3::zeros((4 * object_memory.shape()[0], 1, 64))];
             mask_pos_embed.into_dimensionality()?.to_owned()
-        };
+        };*/
+
+        let mask_mem_pos_enc = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
+        let mask_mem_pos_enc = mask_mem_pos_enc.to_shape((4096, 1, 64))?;
+        let mask_mem_pos_enc = vec![mask_mem_pos_enc.to_owned()];
+
+        let temporal_code = memory_encoder_output["temporal_code"].try_extract_tensor::<f32>()?;
+        let temporal_code = temporal_code.to_shape((7, 1, 64))?.to_owned();
 
         Ok(FormerState {
             object_memory,
             mask_memory,
-            mask_pos_embed,
+            mask_mem_pos_enc,
+            temporal_code,
             points
         })
     }
@@ -112,30 +133,27 @@ impl FormerState {
             concatenate![Axis(0), last_mask_memory, mask_memory]
         };
 
-        let mask_pos_embed = {
+        let mask_mem_pos_enc = {
             let position_encoded = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
-            let position_encoded = position_encoded.to_shape((4096, 1, 64))?;
+            let position_encoded = position_encoded.to_shape((4096, 1, 64))?.to_owned();
+            let mut mask_mem_pos_enc = self.mask_mem_pos_enc;
 
-            let time_code = memory_encoder_output["temporal_code"].try_extract_tensor::<f32>()?;
-            let time_code = time_code.to_shape((7, 1, 64))?;
-            let time_code = concatenate![Axis(0), time_code, Array3::zeros((4096 - 7, 1, 64))];
-            let memory_pos_embed = position_encoded + time_code;
-            let memory_pos_embed = memory_pos_embed.into_dimensionality::<Ix3>()?.to_owned();
+            if mask_mem_pos_enc.len() == 7 {
+                mask_mem_pos_enc.remove(0);
+            }
 
-            /*let last_mask_pos_embed = if self.mask_pos_embed.shape()[0] > 7 {
-                self.mask_pos_embed.slice(s![1.., .., ..]).to_owned()
-            } else {
-                self.mask_pos_embed
-            };*/
-
-            let last_mask_pos_embed =self.mask_pos_embed;
-            concatenate![Axis(0), last_mask_pos_embed, memory_pos_embed]
+            mask_mem_pos_enc.push(position_encoded);
+            mask_mem_pos_enc
         };
+
+        let temporal_code = memory_encoder_output["temporal_code"].try_extract_tensor::<f32>()?;
+        let temporal_code = temporal_code.to_shape((7, 1, 64))?.to_owned();
 
         Ok(FormerState {
             object_memory,
             mask_memory,
-            mask_pos_embed,
+            mask_mem_pos_enc,
+            temporal_code,
             points: self.points
         })
     }
