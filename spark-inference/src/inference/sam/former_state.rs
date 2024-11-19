@@ -51,15 +51,17 @@ impl FormerState {
         let len = self.mask_mem_pos_enc.len();
 
         let mut back = &self.mask_mem_pos_enc[0] + &self.temporal_code.slice(s![0, .., ..]);
+        back = concatenate![Axis(0), Array3::zeros((4, 1, 64)), back];
 
         if len > 1 {
             for index in 1..len {
-                let tmp = &self.mask_mem_pos_enc[index] + &self.temporal_code.slice(s![index, .., ..]);
+                let mut tmp = &self.mask_mem_pos_enc[index] + &self.temporal_code.slice(s![index, .., ..]);
+                tmp = concatenate![Axis(0), Array3::zeros((4, 1, 64)), tmp];
                 back = concatenate![Axis(0), back, tmp];
             }
         }
 
-        concatenate![Axis(0), back, Array3::zeros((4 * len, 1, 64))]
+        back
     }
 }
 
