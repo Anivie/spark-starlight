@@ -1,0 +1,9 @@
+[build]
+pre-build = [                                  # additional commands to run prior to building the package
+    "dpkg --add-architecture $CROSS_DEB_ARCH",
+    "apt-get update",
+    "echo -e \"Asia\nShanghai\" | apt-get --assume-yes install libssl-dev:$CROSS_DEB_ARCH libopenblas-dev:$CROSS_DEB_ARCH clang:$CROSS_DEB_ARCH tar:$CROSS_DEB_ARCH wget:$CROSS_DEB_ARCH",
+    "echo -e \"Asia\nShanghai\" | apt-get install --assume-yes xz-utils:$CROSS_DEB_ARCH",
+    "wget https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl-shared.tar.xz -O /root/ffmpeg.tar.xz",
+    "cd /root && tar xf ffmpeg.tar.xz && mv ffmpeg-master-latest-linux64-gpl-shared ffmpeg && rm ffmpeg.tar.xz"
+]

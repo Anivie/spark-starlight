@@ -41,6 +41,8 @@ fn main() {
         // The input header we would like to generate
         // bindings for.
         .header("./ffi/ffmpeg.h")
+        .clang_arg("-I/root/ffmpeg/include")
+        .generate_comments(false)
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .raw_line("use spark_proc_macro::CloneFrom;")

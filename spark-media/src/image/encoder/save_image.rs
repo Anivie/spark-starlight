@@ -35,13 +35,17 @@ impl Image {
     }
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        if !path.as_ref().exists() {
+            std::fs::create_dir_all(path.as_ref().clone()).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
+        }
+
         self.try_encoder(None)?;
 
         let encoder = self.encoder.as_mut().unwrap();
         encoder.send_frame(&self.inner.frame)?;
 
         let packet = encoder.receive_packet()?;
-        packet.save(path)?;
+        packet.save(path.as_ref())?;
 
         self.inner.packet = Some(packet);
 
@@ -49,7 +53,9 @@ impl Image {
     }
 
     pub fn save_with_format(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        let path = path.as_ref();
+        if !path.as_ref().exists() {
+            std::fs::create_dir_all(path.as_ref().clone()).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
+        }
 
         let extension = path.extension();
         if let Some(extension) = extension {
@@ -68,7 +74,7 @@ impl Image {
         encoder.send_frame(&self.inner.frame)?;
 
         let packet = encoder.receive_packet()?;
-        packet.save(path)?;
+        packet.save(path.as_ref())?;
 
         self.inner.packet = Some(packet);
 

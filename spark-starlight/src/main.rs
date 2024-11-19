@@ -42,8 +42,8 @@ fn main_yolo() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    // let sam2 = SAM2VideoInferenceSession::new("./data/model")?;
-    let sam2 = SAM2VideoInferenceSession::new("/home/git/SAM2Export-origin/checkpoints/tiny")?;
+    let sam2 = SAM2VideoInferenceSession::new("./data/model")?;
+    // let sam2 = SAM2VideoInferenceSession::new("/home/git/SAM2Export-origin/checkpoints/tiny")?;
 
     let path = "./data/image/bird1.png";
     let mut image = Image::open_file(path)?;
