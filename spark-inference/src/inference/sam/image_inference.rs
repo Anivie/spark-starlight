@@ -16,7 +16,7 @@ use ort::session::{SessionInputValue, SessionOutputs};
 use ort::value::TensorRefMut;
 
 pub trait SamImageInference {
-    fn inference_sam(&self, points: Vec<Point<u32>>, image: &mut Image) -> Result<BitVec>;
+    fn inference_sam(&self, points: Vec<Point<f32>>, image: Image) -> Result<BitVec>;
 }
 
 pub struct SAM2ImageInferenceSession {
@@ -41,7 +41,7 @@ impl SAM2ImageInferenceSession {
 }
 
 impl SamImageInference for SAM2ImageInferenceSession {
-    fn inference_sam(&self, points: Vec<Point<u32>>, image: &mut Image) -> Result<BitVec> {
+    fn inference_sam(&self, points: Vec<Point<f32>>, mut image: Image) -> Result<BitVec> {
         let (image, image_size) = {
             let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
                 .add_context("scale", "1024:1024")?
@@ -116,7 +116,7 @@ impl SAM2ImageInferenceSession {
         feat0: ArrayViewD<f32>,
         feat1: ArrayViewD<f32>,
 
-        points: &Vec<Point<u32>>,
+        points: &Vec<Point<f32>>,
     ) -> Result<SessionOutputs> {
         let point_labels = Array2::from_shape_vec(
             (1, points.len()), vec![1_f32; points.len()]
@@ -125,8 +125,8 @@ impl SAM2ImageInferenceSession {
         let points = points
             .iter()
             .map(|point| array![
-                1024f32 * (point.x as f32 / image_size.0 as f32),
-                1024f32 * (point.y as f32 / image_size.1 as f32),
+                1024f32 * (point.x / image_size.0 as f32),
+                1024f32 * (point.y / image_size.1 as f32),
             ])
             .collect::<Vec<Array1<f32>>>();
 

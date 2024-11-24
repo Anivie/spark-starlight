@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 #![cfg_attr(debug_assertions, allow(warnings))]
 #![allow(dead_code)]
 

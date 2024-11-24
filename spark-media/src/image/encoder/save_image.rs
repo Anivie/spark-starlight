@@ -35,8 +35,8 @@ impl Image {
     }
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        if !path.as_ref().exists() {
-            std::fs::create_dir_all(path.as_ref().clone()).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
+        if let Some(path) = path.as_ref().parent() && path.exists() {
+            std::fs::create_dir_all(path.clone()).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
         }
 
         self.try_encoder(None)?;
@@ -53,11 +53,11 @@ impl Image {
     }
 
     pub fn save_with_format(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        if !path.as_ref().exists() {
-            std::fs::create_dir_all(path.as_ref().clone()).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
+        if let Some(path) = path.as_ref().parent() && path.exists() {
+            std::fs::create_dir_all(path.clone()).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
         }
 
-        let extension = path.extension();
+        let extension = path.as_ref().extension();
         if let Some(extension) = extension {
             let extension = extension.to_ascii_uppercase();
             let extension = extension.to_str().ok_or(anyhow!("Fail to cast extension to str."))?;

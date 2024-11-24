@@ -6,7 +6,7 @@ use ort::session::SessionOutputs;
 use crate::utils::graph::Point;
 
 pub enum InferenceType {
-    First(Vec<Point<u32>>),
+    First(Vec<Point<f32>>),
     WithState(FormerState)
 }
 
@@ -16,7 +16,7 @@ pub struct InferenceResult {
 }
 
 impl InferenceType {
-    pub(crate) fn get_points(&self) -> &Vec<Point<u32>> {
+    pub(crate) fn get_points(&self) -> &Vec<Point<f32>> {
         match self {
             InferenceType::First(points) => points,
             InferenceType::WithState(state) => &state.points
@@ -30,7 +30,7 @@ pub struct FormerState {
     mask_mem_pos_enc: Vec<Array3<f32>>,//Every maskmem_features for decoder output in each round
     temporal_code: Array3<f32>,//Every maskmem_features for decoder output in each round
 
-    points: Vec<Point<u32>>,
+    points: Vec<Point<f32>>,
 }
 
 impl FormerState {
@@ -42,7 +42,7 @@ impl FormerState {
         &self.mask_memory
     }
 
-    pub fn points(&self) -> &Vec<Point<u32>> {
+    pub fn points(&self) -> &Vec<Point<f32>> {
         &self.points
     }
 
@@ -68,7 +68,7 @@ impl FormerState {
     pub(crate) fn new(
         image_decoder_output: &SessionOutputs,
         memory_encoder_output: &SessionOutputs,
-        points: Vec<Point<u32>>
+        points: Vec<Point<f32>>
     ) -> Result<Self> {
         let object_memory = image_decoder_output["obj_ptr"].try_extract_tensor::<f32>()?.to_owned();
         let object_memory = object_memory.into_dimensionality::<Ix2>()?;

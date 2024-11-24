@@ -1,7 +1,7 @@
 use ndarray::{Array2, CowArray, Dim, Ix};
 
-pub mod inference_yolo;
 pub mod sam;
+pub mod yolo;
 
 pub(super) fn linear_interpolate(input: &CowArray<f32, Dim<[Ix; 2]>>, new_shape: (usize, usize)) -> Array2<f32> {
     let (old_height, old_width) = input.dim();

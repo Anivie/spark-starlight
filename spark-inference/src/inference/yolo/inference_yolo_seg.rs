@@ -14,7 +14,7 @@ use spark_media::Image;
 use crate::inference::{linear_interpolate, sigmoid};
 use crate::INFERENCE_CUDA;
 
-pub trait YoloModelInference {
+pub trait YoloSegmentInference {
     fn inference_yolo(&self, tensor: Image, confidence: f32, probability_mask: f32) -> Result<Vec<YoloInferenceResult>>;
 }
 
@@ -26,7 +26,7 @@ pub struct YoloInferenceResult {
     pub score: f32,
 }
 
-impl YoloModelInference for OnnxSession {
+impl YoloSegmentInference for OnnxSession {
     fn inference_yolo(&self, mut image: Image, conf_thres: f32, iou_thres: f32) -> Result<Vec<YoloInferenceResult>> {
         let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
             .add_context("scale", "640:640:force_original_aspect_ratio=decrease")?
