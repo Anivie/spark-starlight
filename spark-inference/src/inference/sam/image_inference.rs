@@ -17,11 +17,19 @@ use ort::value::TensorRefMut;
 
 pub trait SamImageInference {
     fn inference_sam(&self, points: Vec<Point<f32>>, image: Image) -> Result<BitVec>;
+    fn encode_image(&self, image: Image) -> Result<SamEncoderOutput>;
+    fn decode_image(&self, points: Vec<Point<f32>>, encoded_result: &SamEncoderOutput) -> Result<BitVec>;
 }
 
 pub struct SAM2ImageInferenceSession {
     image_encoder: OnnxSession,
     image_decoder: OnnxSession,
+}
+
+pub struct SamEncoderOutput<'a> {
+    encoder_output: SessionOutputs<'a, 'a>,
+
+    origin_size: (i32, i32),
 }
 
 impl SAM2ImageInferenceSession {
@@ -71,6 +79,44 @@ impl SamImageInference for SAM2ImageInferenceSession {
             });
             back
         };
+
+        Ok(back)
+    }
+
+    fn encode_image(&self, mut image: Image) -> Result<SamEncoderOutput> {
+        let (image, image_size) = {
+            let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+                .add_context("scale", "1024:1024")?
+                .add_context("format", "rgb24")?
+                .build()?;
+
+            let image_size = image.get_size();
+            image.apply_filter(&filter)?;
+            (image, image_size)
+        };
+
+        Ok(SamEncoderOutput {
+            encoder_output: self.inference_image_encoder(image.raw_data()?.deref())?,
+            origin_size: image_size,
+        })
+    }
+
+    fn decode_image(&self, points: Vec<Point<f32>>, encoded_result: &SamEncoderOutput) -> Result<BitVec> {
+        let decoder_output = self.inference_image_decoder(
+            encoded_result.origin_size,
+            encoded_result.encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
+            encoded_result.encoder_output["high_res_feat0"].try_extract_tensor::<f32>()?,
+            encoded_result.encoder_output["high_res_feat1"].try_extract_tensor::<f32>()?,
+            &points,
+        )?;
+
+        let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
+
+        let mut back = BitVec::with_capacity(pred_mask.len());
+
+        pred_mask.iter().for_each(|x| {
+            back.push(*x > 0f32);
+        });
 
         Ok(back)
     }

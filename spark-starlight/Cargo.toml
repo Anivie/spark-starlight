@@ -9,9 +9,6 @@ spark-media = { path = "../spark-media" }
 
 mimalloc = "0.1.43"
 
-ndarray = { version = "0.16.1", features = ["rayon"] }
 bitvec = "1.0.1"
-itertools = "0.13.0"
-rayon = "1.10.0"
 
-anyhow = "1.0.93"
+anyhow = "1.0.94"

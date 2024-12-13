@@ -1,18 +1,14 @@
-use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use anyhow::Result;
-use bitvec::prelude::*;
 use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::debug;
-use ndarray::{s, Axis, Ix2, Ix3};
+use ndarray::{s, Axis, Ix2};
 use rayon::prelude::*;
-use std::cmp::Ordering;
 use std::path::Path;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::value::TensorRefMut;
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
-use crate::inference::{linear_interpolate, sigmoid};
 use crate::INFERENCE_CUDA;
 
 pub trait YoloDetectInference {

@@ -36,7 +36,7 @@ impl Image {
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
         if let Some(path) = path.as_ref().parent() && path.exists() {
-            std::fs::create_dir_all(path.clone()).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
+            std::fs::create_dir_all(path).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
         }
 
         self.try_encoder(None)?;
@@ -54,7 +54,7 @@ impl Image {
 
     pub fn save_with_format(&mut self, path: impl AsRef<Path>) -> Result<()> {
         if let Some(path) = path.as_ref().parent() && path.exists() {
-            std::fs::create_dir_all(path.clone()).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
+            std::fs::create_dir_all(path).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
         }
 
         let extension = path.as_ref().extension();
