@@ -1,18 +1,18 @@
 use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::OnnxSession;
+use crate::inference::{linear_interpolate, sigmoid};
+use crate::INFERENCE_CUDA;
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::debug;
 use ndarray::{s, Axis, Ix2, Ix3};
-use rayon::prelude::*;
-use std::cmp::Ordering;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::value::TensorRefMut;
+use rayon::prelude::*;
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
-use crate::inference::{linear_interpolate, sigmoid};
-use crate::INFERENCE_CUDA;
+use std::cmp::Ordering;
 
 pub trait YoloSegmentInference {
     fn inference_yolo(&self, tensor: Image, confidence: f32, probability_mask: f32) -> Result<Vec<YoloInferenceResult>>;
@@ -58,8 +58,6 @@ impl YoloSegmentInference for OnnxSession {
 
                 back
             };
-
-            INFERENCE_CUDA.synchronize()?;
 
             tensor
         };

@@ -7,7 +7,8 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use anyhow::Result;
 use spark_inference::inference::sam::image_inference::{SAM2ImageInferenceSession, SamImageInference};
 use spark_inference::inference::yolo::inference_yolo_detect::{YoloDetectInference, YoloDetectSession};
-use spark_inference::utils::graph::Point;
+use spark_inference::inference::yolo::NMSImplement;
+use spark_inference::utils::graph::BoxOrPoint;
 use spark_inference::utils::masks::ApplyMask;
 use spark_media::filter::filter::AVFilter;
 use spark_media::{Image, RGB};
@@ -16,36 +17,72 @@ fn main() -> Result<()> {
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAM2ImageInferenceSession::new("/home/git/SAM2Export-origin/checkpoints/tiny")?;
 
-    let path = "./data/image/s1.jpeg";
+    let path = "./data/image/rd.jpg";
     let image = Image::open_file(path)?;
 
-    let results = yolo.inference_yolo(image, 0.75)?;
-    println!("results: {:?}", results);
+    let results = yolo.inference_yolo(image, 0.25)?;
+    println!("results: {:?}", results.len());
 
-    let result_highway = results.iter().filter(|result| result.score.0 == 0).collect::<Vec<_>>();
-    let result_sidewalk = results.iter().filter(|result| result.score.0 == 1).collect::<Vec<_>>();
+    let result_highway = results.clone().non_maximum_suppression(0.5, 0.35, 0);
+    let result_sidewalk = results.non_maximum_suppression(0.5, 0.25, 1);
+    println!("highway: {:?}", result_highway);
+    println!("sidewalk: {:?}", result_sidewalk);
 
     let image = Image::open_file(path)?;
     let result = sam2.encode_image(image)?;
 
+    /*let highway_mask = sam2.decode_image(
+        result_highway.iter().map(|result| BoxOrPoint::point(result.x, result.y)).collect(),
+        &result,
+    )?;*/
+
     let highway_mask = sam2.decode_image(
-        result_highway.iter().map(|result| Point { x: result.x, y: result.y }).collect(),
+        result_highway.iter().map(|result| BoxOrPoint::boxes(result.x, result.y, result.width, result.height)).collect(),
         &result,
     )?;
 
     let mut image = Image::open_file(path)?;
-    let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
-        .add_context("format", "rgb24")?
-        .build()?;
+    let mut filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+        .add_context("format", "rgb24")?;
 
-    image.apply_filter(&filter)?;
+    for x in result_highway.iter() {
+        let string1 = format!(
+            "x=({x}-{width}/2):y=({y}-{height}/2):w={width}:h={height}:color=red@1.0:t=2",
+            x = x.x,
+            y = x.y,
+            width = x.width,
+            height = x.height,
+        );
+        filter = filter.add_context("drawbox", string1.as_str())?
+    }
+    for x in result_sidewalk.iter() {
+        let string = format!(
+            "x=({x}-{width}/2):y=({y}-{height}/2):w={width}:h={height}:color=blue@1.0:t=2",
+            x = x.x,
+            y = x.y,
+            width = x.width,
+            height = x.height,
+        );
+        filter = filter.add_context("drawbox", string.as_str())?
+    }
+
+    image.apply_filter(&filter.build().unwrap())?;
     image.layering_mask(&highway_mask, RGB(200, 0, 0))?;
     image.save_with_format("./data/out/a_out.png")?;
 
+    if result_sidewalk.is_empty() {
+        return Ok(());
+    }
+
     let sidewalk_mask = sam2.decode_image(
-        result_sidewalk.iter().map(|result| Point { x: result.x, y: result.y }).collect(),
+        result_sidewalk.iter().map(|result| BoxOrPoint::boxes(result.x, result.y, result.width, result.height)).collect(),
         &result,
     )?;
+
+    /*let sidewalk_mask = sam2.decode_image(
+        result_sidewalk.iter().map(|result| BoxOrPoint::point(result.x, result.y)).collect(),
+        &result,
+    )?;*/
 
     let mut image = Image::open_file(path)?;
     let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?

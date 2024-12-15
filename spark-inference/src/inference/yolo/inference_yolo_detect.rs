@@ -1,15 +1,16 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
+use crate::INFERENCE_CUDA;
 use anyhow::Result;
 use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::debug;
 use ndarray::{s, Axis, Ix2};
-use rayon::prelude::*;
-use std::path::Path;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::value::TensorRefMut;
+use rayon::prelude::*;
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
-use crate::INFERENCE_CUDA;
+use std::cmp::Ordering;
+use std::path::Path;
 
 pub trait YoloDetectInference {
     fn inference_yolo(&self, tensor: Image, confidence: f32) -> Result<Vec<YoloDetectResult>>;
@@ -17,7 +18,7 @@ pub trait YoloDetectInference {
 
 #[derive(Debug, Clone)]
 pub struct YoloDetectResult {
-    pub score: (usize, f32),
+    pub score: Vec<f32>,
 
     pub x : f32,
     pub y : f32,
@@ -42,6 +43,10 @@ impl YoloDetectInference for YoloDetectSession {
             .add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?
             .add_context("format", "rgb24")?
             .build()?;
+
+        let (image_width, image_height) = image.get_size();
+        let (image_width, image_height) = (image_width as f32, image_height as f32);
+
         image.apply_filter(&filter)?;
 
         let tensor = {
@@ -68,8 +73,6 @@ impl YoloDetectInference for YoloDetectSession {
                 back
             };
 
-            INFERENCE_CUDA.synchronize()?;
-
             tensor
         };
 
@@ -90,29 +93,13 @@ impl YoloDetectInference for YoloDetectSession {
                     .any(|&score| score > confidence)
             })
             .map(|box_output| {
-                let score = box_output.slice(s![4 .. box_output.len()]);
-                let (max_score, index) = {
-                    let mut max_score = 0.0;
-                    let mut index = 0;
-                    for (i, &s) in score.iter().enumerate() {
-                        if s > max_score {
-                            max_score = s;
-                            index = i;
-                        }
-                    }
-                    (max_score, index)
-                };
-
-                (box_output, max_score, index)
-            })
-            .map(|(box_output, max_score, index)| {
-                YoloDetectResult {
-                    score: (index, max_score),
-                    x: box_output[0],
-                    y: box_output[1],
-                    width: box_output[2],
-                    height: box_output[3],
-                }
+                let score = box_output.slice(s![4 .. box_output.len()]).to_vec();
+                let (x, y, width, height) = yolo_to_image_coords(
+                    box_output[0], box_output[1], box_output[2], box_output[3],
+                    image_width, image_height,
+                    640.0, 640.0
+                );
+                YoloDetectResult { score, x, y, width, height, }
             })
             .collect::<Vec<_>>();
 
@@ -120,35 +107,30 @@ impl YoloDetectInference for YoloDetectSession {
     }
 }
 
-fn calculate_iou(a: &YoloDetectResult, b: &YoloDetectResult) -> f32 {
-    let x1 = a.x.max(b.x);
-    let y1 = a.y.max(b.y);
-    let x2 = (a.x + a.width).min(b.x + b.width);
-    let y2 = (a.y + a.height).min(b.y + b.height);
+use std::f32;
 
-    let intersection = ((x2 - x1).max(0.0)) * ((y2 - y1).max(0.0));
-    let union = a.width * a.height + b.width * b.height - intersection;
+/// 将YOLO预测的结果从经过letterbox处理后的图像映射回原图的坐标系，并保持XYWH格式
+fn yolo_to_image_coords(
+    x_center: f32, y_center: f32, width: f32, height: f32,
+    img_width: f32, img_height: f32,
+    input_width: f32, input_height: f32
+) -> (f32, f32, f32, f32) {
+    // 计算缩放比例
+    let scale = f32::max(img_width / input_width, img_height / input_height);
 
-    if union > 0.0 {
-        intersection / union
-    } else {
-        0.0
-    }
-}
+    // 计算原图在等比例缩放后的尺寸
+    let scaled_img_width = img_width / scale;
+    let scaled_img_height = img_height / scale;
 
-fn non_maximum_suppression(anchors: Vec<YoloDetectResult>, iou_threshold: f32) -> Vec<YoloDetectResult> {
-    let mut anchors = anchors;
-    anchors.sort_by(|a, b| b.score.1.partial_cmp(&a.score.1).unwrap()); // 按分数降序排列
+    // 计算平移的量
+    let x_move = (scaled_img_width - input_width).abs() / 2.0;
+    let y_move = (scaled_img_height - input_height).abs() / 2.0;
 
-    let mut result = Vec::new();
+    // 映射回原图的坐标系
+    let ret_x_center = (x_center - x_move) * scale;
+    let ret_y_center = (y_center - y_move) * scale;
+    let ret_width = width * scale;
+    let ret_height = height * scale;
 
-    while !anchors.is_empty() {
-        let current = anchors.remove(0); // 取出分数最高的锚点
-        result.push(current.clone());
-
-        // 保留与当前锚点 IoU 小于阈值的锚点
-        anchors.retain(|anchor| calculate_iou(&current, anchor) < iou_threshold);
-    }
-
-    result
+    (ret_x_center, ret_y_center, ret_width, ret_height)
 }

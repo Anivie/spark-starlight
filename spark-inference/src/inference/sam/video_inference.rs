@@ -74,7 +74,7 @@ impl SamVideoInference for SAM2VideoInferenceSession {
             vision_feats,
             encoder_output["high_res_feat0"].try_extract_tensor::<f32>()?,
             encoder_output["high_res_feat1"].try_extract_tensor::<f32>()?,
-            types.get_points(),
+            types.get_inner(),
         )?;
 
         let memory_encoder_output = self.inference_memory_encoder(

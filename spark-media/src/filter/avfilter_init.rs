@@ -1,9 +1,9 @@
 use crate::filter::filter::{AVFilter, Locked, UnLocked};
 use anyhow::Result;
 use spark_ffmpeg::avfilter_graph::AVFilterGraph;
+use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::ffi_enum::AVPixelFormat;
 use std::marker::PhantomData;
-use spark_ffmpeg::avframe::AVFrame;
 
 impl AVFilter {
     pub fn builder(pixel_format: AVPixelFormat, in_size: (i32, i32)) -> Result<AVFilter<UnLocked>> {
@@ -31,7 +31,7 @@ impl AVFilter<Locked> {
 }
 
 impl AVFilter<UnLocked> {
-    pub fn add_context(mut self, filter_name: &'static str, args: &'static str) -> Result<Self> {
+    pub fn add_context(mut self, filter_name: &str, args: &str) -> Result<Self> {
         self.inner.add_context(filter_name, args)?;
 
         Ok(self)

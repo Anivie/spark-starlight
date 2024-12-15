@@ -36,7 +36,7 @@ impl AVFilterGraph {
         Ok(back)
     }
 
-    pub fn add_context(&mut self, filter_name: &'static str, args: &'static str) -> Result<()> {
+    pub fn add_context(&mut self, filter_name: &str, args: &str) -> Result<()> {
         let context = AVFilterContext::new(filter_name, args, self)?;
         self.contexts.push(context);
 
