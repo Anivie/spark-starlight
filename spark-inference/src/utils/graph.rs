@@ -1,25 +1,26 @@
-use bitvec::macros::internal::funty::Numeric;
+use num::Num;
 
-#[derive(Debug)]
-pub struct Point<T: Numeric> {
+#[derive(Copy, Clone, Debug)]
+pub struct Point<T: Num> {
     pub x: T,
     pub y: T,
 }
 
-#[derive(Debug)]
-pub struct Box<T: Numeric> {
+#[derive(Copy, Clone, Debug)]
+pub struct Box<T: Num> {
     pub x: T,
     pub y: T,
     pub width: T,
     pub height: T,
 }
 
-pub enum BoxOrPoint<T: Numeric> {
+#[derive(Copy, Clone)]
+pub enum BoxOrPoint<T: Num> {
     Box(Box<T>),
     Point(Point<T>),
 }
 
-impl<T: Numeric> BoxOrPoint<T> {
+impl<T: Num> BoxOrPoint<T> {
     pub fn point(x: T, y: T) -> BoxOrPoint<T> {
         let point = Point {
             x,

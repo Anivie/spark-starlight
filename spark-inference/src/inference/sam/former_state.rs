@@ -6,7 +6,7 @@ use ndarray::prelude::*;
 use ort::session::SessionOutputs;
 
 pub enum InferenceType {
-    First(Vec<BoxOrPoint<f32>>),
+    First(BoxOrPoint<f32>),
     WithState(FormerState)
 }
 
@@ -16,10 +16,10 @@ pub struct InferenceResult {
 }
 
 impl InferenceType {
-    pub(crate) fn get_inner(&self) -> &Vec<BoxOrPoint<f32>> {
+    pub(crate) fn get_inner(&self) -> &BoxOrPoint<f32> {
         match self {
             InferenceType::First(points) => points,
-            InferenceType::WithState(state) => &state.points
+            InferenceType::WithState(state) => &state.prompt
         }
     }
 }
@@ -30,7 +30,7 @@ pub struct FormerState {
     mask_mem_pos_enc: Vec<Array3<f32>>,//Every maskmem_features for decoder output in each round
     temporal_code: Array3<f32>,//Every maskmem_features for decoder output in each round
 
-    points: Vec<BoxOrPoint<f32>>,
+    prompt: BoxOrPoint<f32>,
 }
 
 impl FormerState {
@@ -42,8 +42,8 @@ impl FormerState {
         &self.mask_memory
     }
 
-    pub fn points(&self) -> &Vec<BoxOrPoint<f32>> {
-        &self.points
+    pub fn prompt(&self) -> &BoxOrPoint<f32> {
+        &self.prompt
     }
 
     pub fn memory_pos_embed(&self) -> Result<Array3<f32>> {
@@ -68,7 +68,7 @@ impl FormerState {
     pub(crate) fn new(
         image_decoder_output: &SessionOutputs,
         memory_encoder_output: &SessionOutputs,
-        points: Vec<BoxOrPoint<f32>>
+        points: BoxOrPoint<f32>
     ) -> Result<Self> {
         let object_memory = image_decoder_output["obj_ptr"].try_extract_tensor::<f32>()?.to_owned();
         let object_memory = object_memory.into_dimensionality::<Ix2>()?;
@@ -88,7 +88,7 @@ impl FormerState {
             mask_memory,
             mask_mem_pos_enc,
             temporal_code,
-            points
+            prompt: points
         })
     }
 
@@ -144,7 +144,7 @@ impl FormerState {
             mask_memory,
             mask_mem_pos_enc,
             temporal_code,
-            points: self.points
+            prompt: self.prompt
         })
     }
 }

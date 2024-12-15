@@ -9,7 +9,6 @@ use ort::value::TensorRefMut;
 use rayon::prelude::*;
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
-use std::cmp::Ordering;
 use std::path::Path;
 
 pub trait YoloDetectInference {

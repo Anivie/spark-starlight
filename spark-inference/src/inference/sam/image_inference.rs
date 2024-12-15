@@ -1,10 +1,10 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use crate::utils::graph::BoxOrPoint;
 use crate::INFERENCE_CUDA;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
-use ndarray::{array, Array1, Array2, Array3, ArrayViewD};
+use ndarray::{array, Array2, ArrayViewD};
 use ort::inputs;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::session::{SessionInputValue, SessionOutputs};
@@ -16,9 +16,9 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 pub trait SamImageInference {
-    fn inference_sam(&self, points: Vec<BoxOrPoint<f32>>, image: Image) -> Result<BitVec>;
+    fn inference_sam(&self, prompt: BoxOrPoint<f32>, image: Image) -> Result<BitVec>;
     fn encode_image(&self, image: Image) -> Result<SamEncoderOutput>;
-    fn decode_image(&self, points: Vec<BoxOrPoint<f32>>, encoded_result: &SamEncoderOutput) -> Result<BitVec>;
+    fn decode_image(&self, prompt: BoxOrPoint<f32>, encoded_result: &SamEncoderOutput) -> Result<BitVec>;
 }
 
 pub struct SAM2ImageInferenceSession {
@@ -49,7 +49,7 @@ impl SAM2ImageInferenceSession {
 }
 
 impl SamImageInference for SAM2ImageInferenceSession {
-    fn inference_sam(&self, points: Vec<BoxOrPoint<f32>>, mut image: Image) -> Result<BitVec> {
+    fn inference_sam(&self, prompt: BoxOrPoint<f32>, mut image: Image) -> Result<BitVec> {
         let (image, image_size) = {
             let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
                 .add_context("scale", "1024:1024")?
@@ -68,7 +68,7 @@ impl SamImageInference for SAM2ImageInferenceSession {
             encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
             encoder_output["high_res_feat0"].try_extract_tensor::<f32>()?,
             encoder_output["high_res_feat1"].try_extract_tensor::<f32>()?,
-            &points,
+            prompt,
         )?;
 
         let back = {
@@ -101,13 +101,13 @@ impl SamImageInference for SAM2ImageInferenceSession {
         })
     }
 
-    fn decode_image(&self, points: Vec<BoxOrPoint<f32>>, encoded_result: &SamEncoderOutput) -> Result<BitVec> {
+    fn decode_image(&self, prompt: BoxOrPoint<f32>, encoded_result: &SamEncoderOutput) -> Result<BitVec> {
         let decoder_output = self.inference_image_decoder(
             encoded_result.origin_size,
             encoded_result.encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
             encoded_result.encoder_output["high_res_feat0"].try_extract_tensor::<f32>()?,
             encoded_result.encoder_output["high_res_feat1"].try_extract_tensor::<f32>()?,
-            &points,
+            prompt,
         )?;
 
         let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
@@ -161,57 +161,43 @@ impl SAM2ImageInferenceSession {
         feat0: ArrayViewD<f32>,
         feat1: ArrayViewD<f32>,
 
-        points: &Vec<BoxOrPoint<f32>>,
+        prompt: BoxOrPoint<f32>,
     ) -> Result<SessionOutputs> {
-        if points.is_empty() {
-            return Err(anyhow!("points could not be empty"));
-        }
-
-        let first_type = &points[0];
-
-        let point_labels = match first_type {
-            BoxOrPoint::Point(_) => Array2::from_shape_vec(
-                (1, points.len()), vec![1_f32; points.len()]
-            )?,
-            BoxOrPoint::Box(_) => Array2::from_shape_vec(
-                // (1, points.len() * 2), vec![2_f32; points.len() * 2]
-                (1, 2), vec![2., 3.]
-            )?,
-        };
-
-        let points = points
-            .iter()
-            .map(|point| match point {
-                BoxOrPoint::Box(point) => {
-                    array![
+        let trans_prompt = match &prompt {
+            BoxOrPoint::Box(point) => {
+                array![
                         1024f32 * (point.x / image_size.0 as f32),
                         1024f32 * (point.y / image_size.1 as f32),
                         1024f32 * ((point.x + point.width / 2_f32) / image_size.0 as f32),
                         1024f32 * ((point.y + point.height / 2_f32) / image_size.1 as f32),
                     ]
-                }
-                BoxOrPoint::Point(point) => {
-                    array![
+            }
+            BoxOrPoint::Point(point) => {
+                array![
                         1024f32 * (point.x / image_size.0 as f32),
                         1024f32 * (point.y / image_size.1 as f32),
                     ]
-                }
-            })
-            .collect::<Vec<Array1<f32>>>();
+            }
+        };
 
-        let points = match first_type {
-            BoxOrPoint::Point(_) => Array3::from_shape_vec(
-                (1, points.len(), 2), points.into_iter().flatten().collect()
+        let point_labels = match prompt {
+            BoxOrPoint::Point(_) => Array2::from_shape_vec(
+                (1, 1), vec![1_f32]
             )?,
-            BoxOrPoint::Box(_) => Array3::from_shape_vec(
-                (1, points.len() * 2, 2), points.into_iter().flatten().collect()
+            BoxOrPoint::Box(_) => Array2::from_shape_vec(
+                (1, 2), vec![2_f32, 3_f32]
             )?,
         };
 
         let image_size = array![image_size.1 as i64, image_size.0 as i64];
 
+        let prompt = match prompt {
+            BoxOrPoint::Point(_) => trans_prompt.into_shape_with_order((1, 1, 2))?,
+            BoxOrPoint::Box(_) => trans_prompt.into_shape_with_order((1, 2, 2))?,
+        };
+
         let result = self.image_decoder.run(inputs![
-            "point_coords" => points,
+            "point_coords" => prompt,
             "point_labels" => point_labels,
             "frame_size" => image_size,
 

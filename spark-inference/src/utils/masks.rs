@@ -11,10 +11,6 @@ pub trait ApplyMask {
 
 impl ApplyMask for Image {
     fn layering_mask(&mut self, mask: &BitVec, apply_color: RGB) -> Result<()> {
-        // if self.pixel_format() != AVPixelFormat::AvPixFmtRgb24 {
-        //     return Err(anyhow::anyhow!("Only support Rgb24 pixel format, current is {:?}", self.pixel_format()));
-        // }
-
         let mut data = self.raw_data()?;
         let ptr = SafePtr::new(data.as_mut_ptr());
 

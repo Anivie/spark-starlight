@@ -17,29 +17,31 @@ fn main() -> Result<()> {
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAM2ImageInferenceSession::new("/home/git/SAM2Export-origin/checkpoints/tiny")?;
 
-    let path = "./data/image/rd.jpg";
+    let path = "./data/image/d4.jpg";
     let image = Image::open_file(path)?;
 
-    let results = yolo.inference_yolo(image, 0.25)?;
+    let results = yolo.inference_yolo(image, 0.3)?;
     println!("results: {:?}", results.len());
 
-    let result_highway = results.clone().non_maximum_suppression(0.5, 0.35, 0);
-    let result_sidewalk = results.non_maximum_suppression(0.5, 0.25, 1);
+    let result_highway = results.clone().non_maximum_suppression(0.5, 0.2,  0);
+    let result_sidewalk = results.non_maximum_suppression(0.5, 0.2,  1);
     println!("highway: {:?}", result_highway);
     println!("sidewalk: {:?}", result_sidewalk);
 
     let image = Image::open_file(path)?;
     let result = sam2.encode_image(image)?;
 
-    /*let highway_mask = sam2.decode_image(
-        result_highway.iter().map(|result| BoxOrPoint::point(result.x, result.y)).collect(),
-        &result,
-    )?;*/
+    let highway_mask = result_highway
+        .iter()
+        .map(|result| BoxOrPoint::boxes(result.x, result.y, result.width, result.height))
+        .map(|x| sam2.decode_image(x, &result))
+        .collect::<Vec<_>>();
 
-    let highway_mask = sam2.decode_image(
-        result_highway.iter().map(|result| BoxOrPoint::boxes(result.x, result.y, result.width, result.height)).collect(),
-        &result,
-    )?;
+    let sidewalk_mask = result_sidewalk
+        .iter()
+        .map(|result| BoxOrPoint::boxes(result.x, result.y, result.width, result.height))
+        .map(|x| sam2.decode_image(x, &result))
+        .collect::<Vec<_>>();
 
     let mut image = Image::open_file(path)?;
     let mut filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
@@ -67,31 +69,13 @@ fn main() -> Result<()> {
     }
 
     image.apply_filter(&filter.build().unwrap())?;
-    image.layering_mask(&highway_mask, RGB(200, 0, 0))?;
-    image.save_with_format("./data/out/a_out.png")?;
-
-    if result_sidewalk.is_empty() {
-        return Ok(());
+    for x in sidewalk_mask {
+        image.layering_mask(&x?, RGB(125, 0, 0))?;
     }
-
-    let sidewalk_mask = sam2.decode_image(
-        result_sidewalk.iter().map(|result| BoxOrPoint::boxes(result.x, result.y, result.width, result.height)).collect(),
-        &result,
-    )?;
-
-    /*let sidewalk_mask = sam2.decode_image(
-        result_sidewalk.iter().map(|result| BoxOrPoint::point(result.x, result.y)).collect(),
-        &result,
-    )?;*/
-
-    let mut image = Image::open_file(path)?;
-    let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
-        .add_context("format", "rgb24")?
-        .build()?;
-
-    image.apply_filter(&filter)?;
-    image.layering_mask(&sidewalk_mask, RGB(200, 0, 0))?;
-    image.save_with_format("./data/out/b_out.png")?;
+    for x in highway_mask {
+        image.layering_mask(&x?, RGB(0, 125, 0))?;
+    }
+    image.save_with_format("./data/out/a_out.png")?;
 
 
     Ok(())
