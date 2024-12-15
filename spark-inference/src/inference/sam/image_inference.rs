@@ -174,7 +174,8 @@ impl SAM2ImageInferenceSession {
                 (1, points.len()), vec![1_f32; points.len()]
             )?,
             BoxOrPoint::Box(_) => Array2::from_shape_vec(
-                (1, points.len() * 2), vec![2_f32; points.len() * 2]
+                // (1, points.len() * 2), vec![2_f32; points.len() * 2]
+                (1, 2), vec![2., 3.]
             )?,
         };
 

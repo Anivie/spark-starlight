@@ -107,9 +107,6 @@ impl YoloDetectInference for YoloDetectSession {
     }
 }
 
-use std::f32;
-
-/// 将YOLO预测的结果从经过letterbox处理后的图像映射回原图的坐标系，并保持XYWH格式
 fn yolo_to_image_coords(
     x_center: f32, y_center: f32, width: f32, height: f32,
     img_width: f32, img_height: f32,
