@@ -5,10 +5,14 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use anyhow::Result;
-use spark_inference::inference::sam::image_inference::{SAM2ImageInferenceSession, SamImageInference};
-use spark_inference::inference::yolo::inference_yolo_detect::{YoloDetectInference, YoloDetectSession};
+use spark_inference::inference::sam::image_inference::{
+    SAM2ImageInferenceSession, SamImageInference,
+};
+use spark_inference::inference::yolo::inference_yolo_detect::{
+    YoloDetectInference, YoloDetectSession,
+};
 use spark_inference::inference::yolo::NMSImplement;
-use spark_inference::utils::graph::BoxOrPoint;
+use spark_inference::utils::graph::SamPrompt;
 use spark_inference::utils::masks::ApplyMask;
 use spark_media::filter::filter::AVFilter;
 use spark_media::{Image, RGB};
@@ -23,8 +27,8 @@ fn main() -> Result<()> {
     let results = yolo.inference_yolo(image, 0.3)?;
     println!("results: {:?}", results.len());
 
-    let result_highway = results.clone().non_maximum_suppression(0.5, 0.2,  0);
-    let result_sidewalk = results.non_maximum_suppression(0.5, 0.2,  1);
+    let result_highway = results.clone().non_maximum_suppression(0.5, 0.2, 0);
+    let result_sidewalk = results.non_maximum_suppression(0.5, 0.2, 1);
     println!("highway: {:?}", result_highway);
     println!("sidewalk: {:?}", result_sidewalk);
 
@@ -33,13 +37,13 @@ fn main() -> Result<()> {
 
     let highway_mask = result_highway
         .iter()
-        .map(|result| BoxOrPoint::boxes(result.x, result.y, result.width, result.height))
+        .map(|result| SamPrompt::boxes(result.x, result.y, result.width, result.height))
         .map(|x| sam2.decode_image(x, &result))
         .collect::<Vec<_>>();
 
     let sidewalk_mask = result_sidewalk
         .iter()
-        .map(|result| BoxOrPoint::boxes(result.x, result.y, result.width, result.height))
+        .map(|result| SamPrompt::boxes(result.x, result.y, result.width, result.height))
         .map(|x| sam2.decode_image(x, &result))
         .collect::<Vec<_>>();
 
@@ -76,7 +80,6 @@ fn main() -> Result<()> {
         image.layering_mask(&x?, RGB(0, 125, 0))?;
     }
     image.save_with_format("./data/out/a_out.png")?;
-
 
     Ok(())
 }

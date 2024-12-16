@@ -1,4 +1,4 @@
-use crate::utils::graph::BoxOrPoint;
+use crate::utils::graph::SamPrompt;
 use anyhow::{bail, Result};
 use bitvec::vec::BitVec;
 use ndarray::concatenate;
@@ -6,31 +6,31 @@ use ndarray::prelude::*;
 use ort::session::SessionOutputs;
 
 pub enum InferenceType {
-    First(BoxOrPoint<f32>),
-    WithState(FormerState)
+    First(SamPrompt<f32>),
+    WithState(FormerState),
 }
 
 pub struct InferenceResult {
     pub mask: BitVec,
-    pub state: FormerState
+    pub state: FormerState,
 }
 
 impl InferenceType {
-    pub(crate) fn get_inner(&self) -> &BoxOrPoint<f32> {
+    pub(crate) fn get_inner(&self) -> &SamPrompt<f32> {
         match self {
             InferenceType::First(points) => points,
-            InferenceType::WithState(state) => &state.prompt
+            InferenceType::WithState(state) => &state.prompt,
         }
     }
 }
 
 pub struct FormerState {
-    object_memory: Array2<f32>,//Every obj_ptr for decoder output in each round
-    mask_memory: Array4<f32>,//Every maskmem_features for memory encoder output in each round
-    mask_mem_pos_enc: Vec<Array3<f32>>,//Every maskmem_features for decoder output in each round
-    temporal_code: Array3<f32>,//Every maskmem_features for decoder output in each round
+    object_memory: Array2<f32>, //Every obj_ptr for decoder output in each round
+    mask_memory: Array4<f32>,   //Every maskmem_features for memory encoder output in each round
+    mask_mem_pos_enc: Vec<Array3<f32>>, //Every maskmem_features for decoder output in each round
+    temporal_code: Array3<f32>, //Every maskmem_features for decoder output in each round
 
-    prompt: BoxOrPoint<f32>,
+    prompt: SamPrompt<f32>,
 }
 
 impl FormerState {
@@ -42,7 +42,7 @@ impl FormerState {
         &self.mask_memory
     }
 
-    pub fn prompt(&self) -> &BoxOrPoint<f32> {
+    pub fn prompt(&self) -> &SamPrompt<f32> {
         &self.prompt
     }
 
@@ -55,7 +55,8 @@ impl FormerState {
         back = concatenate![Axis(0), Array3::zeros((4, 1, 64)), back];
 
         for index in 1..self.mask_mem_pos_enc.len() {
-            let mut tmp = &self.mask_mem_pos_enc[index] + &self.temporal_code.slice(s![index, .., ..]);
+            let mut tmp =
+                &self.mask_mem_pos_enc[index] + &self.temporal_code.slice(s![index, .., ..]);
             tmp = concatenate![Axis(0), Array3::zeros((4, 1, 64)), tmp];
             back = concatenate![Axis(0), back, tmp];
         }
@@ -68,15 +69,20 @@ impl FormerState {
     pub(crate) fn new(
         image_decoder_output: &SessionOutputs,
         memory_encoder_output: &SessionOutputs,
-        points: BoxOrPoint<f32>
+        points: SamPrompt<f32>,
     ) -> Result<Self> {
-        let object_memory = image_decoder_output["obj_ptr"].try_extract_tensor::<f32>()?.to_owned();
+        let object_memory = image_decoder_output["obj_ptr"]
+            .try_extract_tensor::<f32>()?
+            .to_owned();
         let object_memory = object_memory.into_dimensionality::<Ix2>()?;
 
-        let mask_memory = memory_encoder_output["maskmem_features"].try_extract_tensor::<f32>()?.to_owned();
+        let mask_memory = memory_encoder_output["maskmem_features"]
+            .try_extract_tensor::<f32>()?
+            .to_owned();
         let mask_memory = mask_memory.into_dimensionality::<Ix4>()?;
 
-        let mask_mem_pos_enc = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
+        let mask_mem_pos_enc =
+            memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
         let mask_mem_pos_enc = mask_mem_pos_enc.to_shape((4096, 1, 64))?;
         let mask_mem_pos_enc = vec![mask_mem_pos_enc.to_owned()];
 
@@ -88,7 +94,7 @@ impl FormerState {
             mask_memory,
             mask_mem_pos_enc,
             temporal_code,
-            prompt: points
+            prompt: points,
         })
     }
 
@@ -98,7 +104,9 @@ impl FormerState {
         memory_encoder_output: &SessionOutputs,
     ) -> Result<Self> {
         let object_memory = {
-            let object_memory = image_decoder_output["obj_ptr"].try_extract_tensor::<f32>()?.to_owned();
+            let object_memory = image_decoder_output["obj_ptr"]
+                .try_extract_tensor::<f32>()?
+                .to_owned();
             let object_memory = object_memory.into_dimensionality::<Ix2>()?;
 
             let last_object_memory = if self.object_memory.shape()[0] > 16 {
@@ -111,7 +119,9 @@ impl FormerState {
         };
 
         let mask_memory = {
-            let mask_memory = memory_encoder_output["maskmem_features"].try_extract_tensor::<f32>()?.to_owned();
+            let mask_memory = memory_encoder_output["maskmem_features"]
+                .try_extract_tensor::<f32>()?
+                .to_owned();
             let mask_memory = mask_memory.into_dimensionality::<Ix4>()?;
 
             let last_mask_memory = if self.mask_memory.shape()[0] > 7 {
@@ -124,7 +134,8 @@ impl FormerState {
         };
 
         let mask_mem_pos_enc = {
-            let position_encoded = memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
+            let position_encoded =
+                memory_encoder_output["maskmem_pos_enc"].try_extract_tensor::<f32>()?;
             let position_encoded = position_encoded.to_shape((4096, 1, 64))?.to_owned();
             let mut mask_mem_pos_enc = self.mask_mem_pos_enc;
 
@@ -144,7 +155,7 @@ impl FormerState {
             mask_memory,
             mask_mem_pos_enc,
             temporal_code,
-            prompt: self.prompt
+            prompt: self.prompt,
         })
     }
 }

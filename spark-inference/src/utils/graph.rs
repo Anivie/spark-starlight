@@ -15,27 +15,24 @@ pub struct Box<T: Num> {
 }
 
 #[derive(Copy, Clone)]
-pub enum BoxOrPoint<T: Num> {
+pub enum SamPrompt<T: Num> {
     Box(Box<T>),
     Point(Point<T>),
 }
 
-impl<T: Num> BoxOrPoint<T> {
-    pub fn point(x: T, y: T) -> BoxOrPoint<T> {
-        let point = Point {
-            x,
-            y,
-        };
-        BoxOrPoint::Point(point)
+impl<T: Num> SamPrompt<T> {
+    pub fn point(x: T, y: T) -> SamPrompt<T> {
+        let point = Point { x, y };
+        SamPrompt::Point(point)
     }
 
-    pub fn boxes(x: T, y: T, width: T, height: T) -> BoxOrPoint<T> {
+    pub fn boxes(x: T, y: T, width: T, height: T) -> SamPrompt<T> {
         let boxes = Box {
             x,
             y,
             width,
-            height
+            height,
         };
-        BoxOrPoint::Box(boxes)
+        SamPrompt::Box(boxes)
     }
 }
