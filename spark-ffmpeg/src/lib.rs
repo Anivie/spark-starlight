@@ -4,18 +4,18 @@
 pub mod util;
 mod ffi;
 
-pub mod avformat;
-pub mod avcodec;
-pub mod avframe;
-pub mod sws;
 pub mod av_mem_alloc;
+mod av_rational;
+pub mod avcodec;
+pub mod avfilter_context;
+pub mod avfilter_graph;
+pub mod avformat;
+pub mod avframe;
 pub mod avpacket;
-pub mod pixel;
 pub mod avstream;
 pub mod ffi_enum;
-pub mod avfilter_graph;
-pub mod avfilter_context;
-mod av_rational;
+pub mod pixel;
+pub mod sws;
 
 pub trait DeepClone {
     fn deep_clone(&self) -> anyhow::Result<Self>

@@ -15,14 +15,7 @@ impl AVCodecContext {
     }
 
     pub fn buffer_size(&self, format: AVPixelFormat) -> anyhow::Result<i32> {
-        let size = unsafe {
-            av_image_get_buffer_size(
-                format as i32,
-                self.width,
-                self.height,
-                1,
-            )
-        };
+        let size = unsafe { av_image_get_buffer_size(format as i32, self.width, self.height, 1) };
 
         if size > 0 {
             Ok(size)

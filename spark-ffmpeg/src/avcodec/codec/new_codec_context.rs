@@ -1,17 +1,22 @@
 use crate::avcodec::codec::codec_parameter::AVCodecParameters;
 use crate::avcodec::{AVCodec, AVCodecContext};
 use crate::avframe::AVFrame;
-use crate::ffi::{avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, AVDictionary, AVRational, AVStream};
+use crate::ffi::{
+    avcodec_alloc_context3, avcodec_open2, avcodec_parameters_to_context, AVDictionary, AVRational,
+    AVStream,
+};
 use crate::ffi_enum::AVPixelFormat;
 use crate::DeepClone;
 use anyhow::{bail, Result};
 use std::ptr::{null, null_mut};
 
 impl AVCodecContext {
-    pub fn from_stream(codec: &AVCodec, stream: &AVStream, av_dictionary: Option<AVDictionary>) -> Result<Self> {
-        let ptr = unsafe {
-            avcodec_alloc_context3(codec.inner.cast_const())
-        };
+    pub fn from_stream(
+        codec: &AVCodec,
+        stream: &AVStream,
+        av_dictionary: Option<AVDictionary>,
+    ) -> Result<Self> {
+        let ptr = unsafe { avcodec_alloc_context3(codec.inner.cast_const()) };
 
         if ptr.is_null() {
             bail!("Failed to allocate codec context.");
@@ -24,10 +29,12 @@ impl AVCodecContext {
         Ok(context)
     }
 
-    pub fn from_frame(codec: &AVCodec, avframe: &AVFrame, av_dictionary: Option<AVDictionary>) -> Result<Self> {
-        let ptr = unsafe {
-            avcodec_alloc_context3(codec.inner.cast_const())
-        };
+    pub fn from_frame(
+        codec: &AVCodec,
+        avframe: &AVFrame,
+        av_dictionary: Option<AVDictionary>,
+    ) -> Result<Self> {
+        let ptr = unsafe { avcodec_alloc_context3(codec.inner.cast_const()) };
 
         if ptr.is_null() {
             bail!("Failed to allocate codec context.");
@@ -39,10 +46,7 @@ impl AVCodecContext {
             context.height = avframe.height;
             context.pix_fmt = avframe.format as i32;
 
-            context.time_base = AVRational {
-                num: 1,
-                den: 25,
-            };
+            context.time_base = AVRational { num: 1, den: 25 };
 
             context.codec_id = codec.id;
             context.codec = codec.inner;
@@ -56,9 +60,7 @@ impl AVCodecContext {
     }
 
     pub fn copy_into(other: &AVCodecContext) -> Result<Self> {
-        let ptr = unsafe {
-            avcodec_alloc_context3(null())
-        };
+        let ptr = unsafe { avcodec_alloc_context3(null()) };
 
         let parameter = AVCodecParameters::from_context(other)?;
 
@@ -73,7 +75,7 @@ impl AVCodecContext {
             (*ptr).codec_id = other.codec_id;
             (*ptr).codec = other.codec;
         }
-        
+
         ffmpeg! {
             avcodec_open2(
                 ptr,
@@ -85,10 +87,13 @@ impl AVCodecContext {
         Ok(AVCodecContext { inner: ptr })
     }
 
-    pub fn new(size: (i32, i32), format: AVPixelFormat, codec: &AVCodec, av_dictionary: Option<AVDictionary>) -> Result<Self> {
-        let ptr = unsafe {
-            avcodec_alloc_context3(codec.inner.cast_const())
-        };
+    pub fn new(
+        size: (i32, i32),
+        format: AVPixelFormat,
+        codec: &AVCodec,
+        av_dictionary: Option<AVDictionary>,
+    ) -> Result<Self> {
+        let ptr = unsafe { avcodec_alloc_context3(codec.inner.cast_const()) };
 
         if ptr.is_null() {
             bail!("Failed to allocate codec context.");
@@ -99,10 +104,7 @@ impl AVCodecContext {
         context.height = size.1;
         context.pix_fmt = format as i32;
 
-        context.time_base = AVRational {
-            num: 1,
-            den: 25,
-        };
+        context.time_base = AVRational { num: 1, den: 25 };
 
         context.codec_id = codec.id;
         context.codec = codec.inner;
@@ -130,7 +132,7 @@ impl AVCodecContext {
 impl DeepClone for AVCodecContext {
     fn deep_clone(&self) -> Result<Self>
     where
-        Self: Sized
+        Self: Sized,
     {
         let new = AVCodecContext::copy_into(self)?;
         Ok(new)

@@ -1,7 +1,6 @@
 include!(concat!(env!("OUT_DIR"), "/codec_id.rs"));
 include!(concat!(env!("OUT_DIR"), "/pixel.rs"));
 
-
 /*use num_enum::TryFromPrimitive;
 
 #[repr(i32)]

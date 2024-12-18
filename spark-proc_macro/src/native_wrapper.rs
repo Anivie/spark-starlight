@@ -32,13 +32,13 @@ impl Parse for WrapArgs {
                         _ => {
                             back.push_str(&tt.to_string());
                             rest = next;
-                        },
+                        }
                     }
                 }
                 Err(cursor.error("no `>` was found after this point"))
             })?;
             Some(back)
-        }else {
+        } else {
             None
         };
 
@@ -59,7 +59,7 @@ impl Parse for WrapArgs {
             })?;
 
             back.to_string()
-        }else {
+        } else {
             String::new()
         };
 
@@ -72,7 +72,7 @@ impl Parse for WrapArgs {
                 content
             };
             Some(field.parse::<Ident>()?)
-        }else {
+        } else {
             None
         };
 
@@ -84,7 +84,7 @@ impl Parse for WrapArgs {
                 content
             };
             Some(field.parse::<Ident>()?)
-        }else {
+        } else {
             None
         };
 
@@ -113,14 +113,12 @@ pub fn wrap_ffmpeg(token_stream: TokenStream) -> TokenStream {
     let raw_name = format_ident!("{}Raw", name);
 
     let generics: proc_macro2::TokenStream = if generics.is_some() {
-        parse_str(&format!("<{}>", generics.unwrap_or_default()))
-            .expect("Failed to parse generics")
-    }else {
+        parse_str(&format!("<{}>", generics.unwrap_or_default())).expect("Failed to parse generics")
+    } else {
         quote! {}
     };
 
-    let fields: proc_macro2::TokenStream = parse_str(&fields)
-        .expect("Failed to parse fields");
+    let fields: proc_macro2::TokenStream = parse_str(&fields).expect("Failed to parse fields");
 
     let mut output = quote! {
         use crate::ffi::#name as #raw_name;

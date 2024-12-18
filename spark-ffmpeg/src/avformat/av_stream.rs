@@ -14,9 +14,7 @@ impl<'a> Iterator for AVFormatContextStream<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let index = *self.video_index.get(self.current_index)?;
-        let stream = unsafe {
-            &**self.context.streams.wrapping_add(index as usize)
-        };
+        let stream = unsafe { &**self.context.streams.wrapping_add(index as usize) };
         self.current_index += 1;
 
         Some((index, stream))
@@ -41,17 +39,16 @@ impl AVFormatContext {
 
         let first_match_stream = (0..self.nb_streams)
             .into_iter()
-            .filter(|x| {
-                unsafe {
-                    (*(**self.streams.offset(*x as isize)).codecpar).codec_type == target_type as i32
-                }
+            .filter(|x| unsafe {
+                (*(**self.streams.offset(*x as isize)).codecpar).codec_type == target_type as i32
             })
             .collect::<Vec<_>>();
 
         if !first_match_stream.is_empty() {
-            self.scanned_stream.insert(target_type, first_match_stream.clone());
+            self.scanned_stream
+                .insert(target_type, first_match_stream.clone());
             Ok(first_match_stream)
-        }else {
+        } else {
             Err(anyhow!("No target stream {:?} found", target_type))
         }
     }

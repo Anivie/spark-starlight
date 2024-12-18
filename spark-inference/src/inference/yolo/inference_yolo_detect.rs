@@ -19,19 +19,20 @@ pub trait YoloDetectInference {
 pub struct YoloDetectResult {
     pub score: Vec<f32>,
 
-    pub x : f32,
-    pub y : f32,
-    pub width : f32,
-    pub height : f32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 pub struct YoloDetectSession(OnnxSession);
 
 impl YoloDetectSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
-        Ok(Self(
-            OnnxSession::new(folder_path.as_ref().join("yolo_detect.onnx"), ExecutionProvider::CUDA)?
-        ))
+        Ok(Self(OnnxSession::new(
+            folder_path.as_ref().join("yolo_detect.onnx"),
+            ExecutionProvider::CUDA,
+        )?))
     }
 }
 
@@ -57,14 +58,15 @@ impl YoloDetectInference for YoloDetectSession {
 
                 INFERENCE_CUDA
                     .normalise_pixel_div()
-                    .launch(cfg, (
-                        &mut tensor,
-                        &buffer,
-                        buffer.len()
-                    ))?;
+                    .launch(cfg, (&mut tensor, &buffer, buffer.len()))?;
 
                 let back = TensorRefMut::from_raw(
-                    MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
+                    MemoryInfo::new(
+                        AllocationDevice::CUDA,
+                        0,
+                        AllocatorType::Device,
+                        MemoryType::Default,
+                    )?,
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
                     vec![1, 3, 640, 640],
                 )?;
@@ -79,7 +81,10 @@ impl YoloDetectInference for YoloDetectSession {
         let outputs = self.0.run([tensor.into()])?;
         debug!("Finish running model");
 
-        let output_first = outputs["output0"].try_extract_tensor::<f32>()?.t().into_owned();
+        let output_first = outputs["output0"]
+            .try_extract_tensor::<f32>()?
+            .t()
+            .into_owned();
         let output_first = output_first.squeeze().into_dimensionality::<Ix2>()?;
 
         let result = output_first
@@ -87,18 +92,29 @@ impl YoloDetectInference for YoloDetectSession {
             .into_par_iter()
             .filter(|box_output| {
                 box_output
-                    .slice(s![4 .. box_output.len()])
+                    .slice(s![4..box_output.len()])
                     .iter()
                     .any(|&score| score > confidence)
             })
             .map(|box_output| {
-                let score = box_output.slice(s![4 .. box_output.len()]).to_vec();
+                let score = box_output.slice(s![4..box_output.len()]).to_vec();
                 let (x, y, width, height) = yolo_to_image_coords(
-                    box_output[0], box_output[1], box_output[2], box_output[3],
-                    image_width, image_height,
-                    640.0, 640.0
+                    box_output[0],
+                    box_output[1],
+                    box_output[2],
+                    box_output[3],
+                    image_width,
+                    image_height,
+                    640.0,
+                    640.0,
                 );
-                YoloDetectResult { score, x, y, width, height, }
+                YoloDetectResult {
+                    score,
+                    x,
+                    y,
+                    width,
+                    height,
+                }
             })
             .collect::<Vec<_>>();
 
@@ -107,9 +123,14 @@ impl YoloDetectInference for YoloDetectSession {
 }
 
 fn yolo_to_image_coords(
-    x_center: f32, y_center: f32, width: f32, height: f32,
-    img_width: f32, img_height: f32,
-    input_width: f32, input_height: f32
+    x_center: f32,
+    y_center: f32,
+    width: f32,
+    height: f32,
+    img_width: f32,
+    img_height: f32,
+    input_width: f32,
+    input_height: f32,
 ) -> (f32, f32, f32, f32) {
     // 计算缩放比例
     let scale = f32::max(img_width / input_width, img_height / input_height);

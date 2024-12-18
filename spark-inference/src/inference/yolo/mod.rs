@@ -1,8 +1,7 @@
 use inference_yolo_detect::YoloDetectResult;
 
-pub mod inference_yolo_seg;
 pub mod inference_yolo_detect;
-
+pub mod inference_yolo_seg;
 
 impl YoloDetectResult {
     // 计算两个检测框的IoU

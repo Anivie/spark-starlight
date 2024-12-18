@@ -1,4 +1,3 @@
-use std::path::Path;
 use crate::image::util::image_inner::ImageInner;
 use crate::image::util::image_util::ImageUtil;
 use crate::{Image, CODEC};
@@ -9,25 +8,29 @@ use spark_ffmpeg::avformat::avformat_context::OpenFileToAVFormatContext;
 use spark_ffmpeg::avformat::{AVFormatContext, AVMediaType};
 use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::avpacket::AVPacket;
+use std::path::Path;
 
 impl Image {
     pub fn open_file(path: impl AsRef<Path>) -> Result<Self> {
         let mut format = AVFormatContext::open_file(path, None)?;
-        let codec_context = format.video_stream()?.map(|(_, stream)| {
-            let id = stream.codec_id();
-            let codec_guard = CODEC.read();
-            let codec = codec_guard.get(&id);
-            match codec {
-                Some(codec) => AVCodecContext::from_stream(&codec, stream, None),
-                None => {
-                    drop(codec_guard);
-                    let codec = AVCodec::new_decoder_with_id(id)?;
-                    let codec_context = AVCodecContext::from_stream(&codec, stream, None)?;
-                    CODEC.write().insert(id, codec);
-                    Ok(codec_context)
+        let codec_context = format
+            .video_stream()?
+            .map(|(_, stream)| {
+                let id = stream.codec_id();
+                let codec_guard = CODEC.read();
+                let codec = codec_guard.get(&id);
+                match codec {
+                    Some(codec) => AVCodecContext::from_stream(&codec, stream, None),
+                    None => {
+                        drop(codec_guard);
+                        let codec = AVCodec::new_decoder_with_id(id)?;
+                        let codec_context = AVCodecContext::from_stream(&codec, stream, None)?;
+                        CODEC.write().insert(id, codec);
+                        Ok(codec_context)
+                    }
                 }
-            }
-        }).next();
+            })
+            .next();
 
         let codec_context = match codec_context {
             Some(Ok(codec_context)) => codec_context,
@@ -67,7 +70,6 @@ impl Image {
         }
 
         let packet = vec.remove(0)?;
-
 
         Ok((packet.0, packet.1))
     }

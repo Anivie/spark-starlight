@@ -9,9 +9,7 @@ wrap_ffmpeg!(
 
 impl AVCodecParameters {
     pub fn new() -> Result<Self> {
-        let ptr = unsafe {
-            avcodec_parameters_alloc()
-        };
+        let ptr = unsafe { avcodec_parameters_alloc() };
 
         if ptr.is_null() {
             bail!("Failed to allocate AVCodecParameters.");

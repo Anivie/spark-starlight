@@ -11,9 +11,7 @@ impl AVFilter {
 
         let arg = format!(
             "video_size={}x{}:pix_fmt={}:time_base={}/{}",
-            in_size.0, in_size.1,
-            pixel_format as i32,
-            1, 30
+            in_size.0, in_size.1, pixel_format as i32, 1, 30
         );
         graph.add_context_with_name("buffer", "in", Some(&arg))?;
 
@@ -38,7 +36,8 @@ impl AVFilter<UnLocked> {
     }
 
     pub fn build(mut self) -> Result<AVFilter<Locked>> {
-        self.inner.add_context_with_name("buffersink", "out", None)?;
+        self.inner
+            .add_context_with_name("buffersink", "out", None)?;
         self.inner.link()?;
 
         Ok(AVFilter {

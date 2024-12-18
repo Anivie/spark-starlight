@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 #![cfg_attr(debug_assertions, allow(warnings))]
 
-extern crate openblas_src;
+// extern crate openblas_src;
 
-pub mod engine;
-pub mod utils;
-pub mod inference;
 pub(crate) mod cuda;
+pub mod engine;
+pub mod inference;
+pub mod utils;
 
 use cuda::cuda::Cuda;
 use std::sync::LazyLock;

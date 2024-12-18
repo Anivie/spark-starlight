@@ -17,7 +17,7 @@ impl AVFrame {
     pub fn fill_data(&mut self, data: &[u8], pix_fmt: AVPixelFormat) {
         let width = if pix_fmt == AVPixelFormat::Gray8 {
             unsafe { *self.inner }.width
-        }else {
+        } else {
             unsafe { *self.inner }.width * 3
         };
         let height = unsafe { *self.inner }.height;
@@ -31,17 +31,9 @@ impl AVFrame {
         }
 
         let ptr = SafePtr::new(self.data[0]);
-        (0..height)
-            .into_par_iter()
-            .for_each(|y| {
-                unsafe {
-                    ptr
-                        .add((y * line_size) as usize)
-                        .copy_from_nonoverlapping(
-                            data.as_ptr().add((y * width) as usize),
-                            width as usize
-                        )
-                }
-            });
+        (0..height).into_par_iter().for_each(|y| unsafe {
+            ptr.add((y * line_size) as usize)
+                .copy_from_nonoverlapping(data.as_ptr().add((y * width) as usize), width as usize)
+        });
     }
 }

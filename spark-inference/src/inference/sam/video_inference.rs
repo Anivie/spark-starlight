@@ -25,11 +25,23 @@ impl SAM2VideoInferenceSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
         Ok(Self {
             image_session: SAM2ImageInferenceSession::raw(
-                OnnxSession::new(folder_path.as_ref().join("image_encoder.onnx"), ExecutionProvider::CUDA)?,
-                OnnxSession::new(folder_path.as_ref().join("image_decoder.onnx"), ExecutionProvider::CUDA)?,
+                OnnxSession::new(
+                    folder_path.as_ref().join("image_encoder.onnx"),
+                    ExecutionProvider::CUDA,
+                )?,
+                OnnxSession::new(
+                    folder_path.as_ref().join("image_decoder.onnx"),
+                    ExecutionProvider::CUDA,
+                )?,
             ),
-            memory_attention: OnnxSession::new(folder_path.as_ref().join("memory_attention.onnx"), ExecutionProvider::CUDA)?,
-            memory_encoder: OnnxSession::new(folder_path.as_ref().join("memory_encoder.onnx"), ExecutionProvider::CUDA)?,
+            memory_attention: OnnxSession::new(
+                folder_path.as_ref().join("memory_attention.onnx"),
+                ExecutionProvider::CUDA,
+            )?,
+            memory_encoder: OnnxSession::new(
+                folder_path.as_ref().join("memory_encoder.onnx"),
+                ExecutionProvider::CUDA,
+            )?,
         })
     }
 }
@@ -47,16 +59,24 @@ impl SamVideoInference for SAM2VideoInferenceSession {
             (image, image_size)
         };
 
-        let encoder_output = self.image_session.inference_image_encoder(image.raw_data()?.deref())?;
+        let encoder_output = self
+            .image_session
+            .inference_image_encoder(image.raw_data()?.deref())?;
 
         let mut memory_attention_output = None;
         let vision_feats = {
             match &types {
-                InferenceType::First(_) => encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
+                InferenceType::First(_) => {
+                    encoder_output["vision_feats"].try_extract_tensor::<f32>()?
+                }
                 InferenceType::WithState(state) => {
                     let memory_attention_output_inner = self.inference_memory_attention(
-                        encoder_output["vision_feats"].try_extract_tensor::<f32>()?.view(),
-                        encoder_output["vision_pos_embed"].try_extract_tensor::<f32>()?.view(),
+                        encoder_output["vision_feats"]
+                            .try_extract_tensor::<f32>()?
+                            .view(),
+                        encoder_output["vision_pos_embed"]
+                            .try_extract_tensor::<f32>()?
+                            .view(),
                         state.object_memory(),
                         state.mask_memory(),
                         &state.memory_pos_embed()?,
@@ -78,8 +98,12 @@ impl SamVideoInference for SAM2VideoInferenceSession {
         )?;
 
         let memory_encoder_output = self.inference_memory_encoder(
-            decoder_output["mask_for_mem"].try_extract_tensor::<f32>()?.view(),
-            encoder_output["pix_feat"].try_extract_tensor::<f32>()?.view()
+            decoder_output["mask_for_mem"]
+                .try_extract_tensor::<f32>()?
+                .view(),
+            encoder_output["pix_feat"]
+                .try_extract_tensor::<f32>()?
+                .view(),
         )?;
 
         let state = match types {
@@ -100,10 +124,7 @@ impl SamVideoInference for SAM2VideoInferenceSession {
             back
         };
 
-        Ok(InferenceResult {
-            mask,
-            state,
-        })
+        Ok(InferenceResult { mask, state })
     }
 }
 

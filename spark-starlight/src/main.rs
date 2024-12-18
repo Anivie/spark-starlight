@@ -19,9 +19,9 @@ use spark_media::{Image, RGB};
 
 fn main() -> Result<()> {
     let yolo = YoloDetectSession::new("./data/model")?;
-    let sam2 = SAM2ImageInferenceSession::new("/home/git/SAM2Export-origin/checkpoints/tiny")?;
+    let sam2 = SAM2ImageInferenceSession::new("./data/model/other")?;
 
-    let path = "./data/image/d4.jpg";
+    let path = "./data/image/c.jpg";
     let image = Image::open_file(path)?;
 
     let results = yolo.inference_yolo(image, 0.3)?;
@@ -37,13 +37,23 @@ fn main() -> Result<()> {
 
     let highway_mask = result_highway
         .iter()
-        .map(|result| SamPrompt::boxes(result.x, result.y, result.width, result.height))
+        .map(|result| {
+            SamPrompt::both(
+                (result.x, result.y, result.width, result.height),
+                (result.x, result.y),
+            )
+        })
         .map(|x| sam2.decode_image(x, &result))
         .collect::<Vec<_>>();
 
     let sidewalk_mask = result_sidewalk
         .iter()
-        .map(|result| SamPrompt::boxes(result.x, result.y, result.width, result.height))
+        .map(|result| {
+            SamPrompt::both(
+                (result.x, result.y, result.width, result.height),
+                (result.x, result.y),
+            )
+        })
         .map(|x| sam2.decode_image(x, &result))
         .collect::<Vec<_>>();
 

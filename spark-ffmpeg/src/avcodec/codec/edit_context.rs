@@ -10,7 +10,10 @@ impl AVCodecContext {
         Ok(())
     }
 
-    pub(super) fn apply_format_with_parameter(&mut self, format_context: &AVCodecParameters) -> anyhow::Result<()> {
+    pub(super) fn apply_format_with_parameter(
+        &mut self,
+        format_context: &AVCodecParameters,
+    ) -> anyhow::Result<()> {
         ffmpeg! {
             avcodec_parameters_to_context(self.inner, format_context as *const AVCodecParameters)
         }

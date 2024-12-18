@@ -4,7 +4,7 @@ use crate::INFERENCE_CUDA;
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
-use ndarray::{array, Array2, ArrayViewD};
+use ndarray::{array, Array, Array2, ArrayBase, ArrayViewD, Dim, Ix, OwnedRepr};
 use ort::inputs;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::session::{SessionInputValue, SessionOutputs};
@@ -16,7 +16,6 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 pub trait SamImageInference {
-    fn inference_sam(&self, prompt: SamPrompt<f32>, image: Image) -> Result<BitVec>;
     fn encode_image(&self, image: Image) -> Result<SamEncoderOutput>;
     fn decode_image(
         &self,
@@ -59,40 +58,6 @@ impl SAM2ImageInferenceSession {
 }
 
 impl SamImageInference for SAM2ImageInferenceSession {
-    fn inference_sam(&self, prompt: SamPrompt<f32>, mut image: Image) -> Result<BitVec> {
-        let (image, image_size) = {
-            let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
-                .add_context("scale", "1024:1024")?
-                .add_context("format", "rgb24")?
-                .build()?;
-
-            let image_size = image.get_size();
-            image.apply_filter(&filter)?;
-            (image, image_size)
-        };
-
-        let encoder_output = self.inference_image_encoder(image.raw_data()?.deref())?;
-
-        let decoder_output = self.inference_image_decoder(
-            image_size,
-            encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
-            encoder_output["high_res_feat0"].try_extract_tensor::<f32>()?,
-            encoder_output["high_res_feat1"].try_extract_tensor::<f32>()?,
-            prompt,
-        )?;
-
-        let back = {
-            let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
-            let mut back = BitVec::with_capacity(pred_mask.len());
-            pred_mask.iter().for_each(|x| {
-                back.push(*x > 0f32);
-            });
-            back
-        };
-
-        Ok(back)
-    }
-
     fn encode_image(&self, mut image: Image) -> Result<SamEncoderOutput> {
         let (image, image_size) = {
             let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
@@ -118,13 +83,14 @@ impl SamImageInference for SAM2ImageInferenceSession {
     ) -> Result<BitVec> {
         let decoder_output = self.inference_image_decoder(
             encoded_result.origin_size,
-            encoded_result.encoder_output["vision_feats"].try_extract_tensor::<f32>()?,
-            encoded_result.encoder_output["high_res_feat0"].try_extract_tensor::<f32>()?,
-            encoded_result.encoder_output["high_res_feat1"].try_extract_tensor::<f32>()?,
+            encoded_result.encoder_output["image_embeddings"].try_extract_tensor::<f32>()?,
+            encoded_result.encoder_output["high_res_features1"].try_extract_tensor::<f32>()?,
+            encoded_result.encoder_output["high_res_features2"].try_extract_tensor::<f32>()?,
             prompt,
         )?;
 
-        let pred_mask = decoder_output["pred_mask"].try_extract_tensor::<f32>()?;
+        let pred_mask = decoder_output["masks"].try_extract_tensor::<f32>()?;
+        // let iou_predictions = decoder_output["iou_predictions"].try_extract_tensor::<f32>()?;
 
         let mut back = BitVec::with_capacity(pred_mask.len());
 
@@ -174,7 +140,7 @@ impl SAM2ImageInferenceSession {
 
         Ok(self
             .image_encoder
-            .run(vec![("image", SessionInputValue::from(tensor))])?)
+            .run(vec![("input", SessionInputValue::from(tensor))])?)
     }
 
     pub(crate) fn inference_image_decoder(
@@ -187,13 +153,16 @@ impl SAM2ImageInferenceSession {
 
         prompt: SamPrompt<f32>,
     ) -> Result<SessionOutputs> {
+        let im_size = array![image_size.1 as i64, image_size.0 as i64];
+        let mask_input: ArrayBase<OwnedRepr<f32>, Dim<[Ix; 4]>> = Array::zeros((1, 1, 256, 256));
+
         let trans_prompt = match &prompt {
-            SamPrompt::Box(point) => {
+            SamPrompt::Box(boxes) => {
                 array![
-                    1024f32 * (point.x / image_size.0 as f32),
-                    1024f32 * (point.y / image_size.1 as f32),
-                    1024f32 * ((point.x + point.width / 2_f32) / image_size.0 as f32),
-                    1024f32 * ((point.y + point.height / 2_f32) / image_size.1 as f32),
+                    1024f32 * (boxes.x / image_size.0 as f32),
+                    1024f32 * (boxes.y / image_size.1 as f32),
+                    1024f32 * ((boxes.x + boxes.width / 2_f32) / image_size.0 as f32),
+                    1024f32 * ((boxes.y + boxes.height / 2_f32) / image_size.1 as f32),
                 ]
             }
             SamPrompt::Point(point) => {
@@ -202,28 +171,40 @@ impl SAM2ImageInferenceSession {
                     1024f32 * (point.y / image_size.1 as f32),
                 ]
             }
+            SamPrompt::Both(point, boxes) => {
+                array![
+                    1024f32 * (point.x / image_size.0 as f32),
+                    1024f32 * (point.y / image_size.1 as f32),
+                    1024f32 * (boxes.x / image_size.0 as f32),
+                    1024f32 * (boxes.y / image_size.1 as f32),
+                    1024f32 * ((boxes.x + boxes.width / 2_f32) / image_size.0 as f32),
+                    1024f32 * ((boxes.y + boxes.height / 2_f32) / image_size.1 as f32),
+                ]
+            }
         };
 
         let point_labels = match prompt {
             SamPrompt::Point(_) => Array2::from_shape_vec((1, 1), vec![1_f32])?,
-            SamPrompt::Box(_) => Array2::from_shape_vec((1, 2), vec![2_f32, 3_f32])?,
+            SamPrompt::Box(_) => Array2::from_shape_vec((1, 2), vec![1_f32, 1_f32])?,
+            SamPrompt::Both(_, _) => Array2::from_shape_vec((1, 3), vec![1_f32, 1_f32, 1_f32])?,
         };
-
-        let image_size = array![image_size.1 as i64, image_size.0 as i64];
 
         let prompt = match prompt {
             SamPrompt::Point(_) => trans_prompt.into_shape_with_order((1, 1, 2))?,
             SamPrompt::Box(_) => trans_prompt.into_shape_with_order((1, 2, 2))?,
+            SamPrompt::Both(_, _) => trans_prompt.into_shape_with_order((1, 3, 2))?,
         };
 
         let result = self.image_decoder.run(inputs![
             "point_coords" => prompt,
             "point_labels" => point_labels,
-            "frame_size" => image_size,
+            "orig_im_size" => im_size,
+            "has_mask_input" => array![0_f32],
+            "mask_input" => mask_input,
 
-            "image_embed" => feats,
-            "high_res_feats_0" => feat0,
-            "high_res_feats_1" => feat1,
+            "image_embeddings" => feats,
+            "high_res_features1" => feat0,
+            "high_res_features2" => feat1,
         ]?)?;
 
         Ok(result)

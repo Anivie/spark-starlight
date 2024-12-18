@@ -15,7 +15,12 @@ use spark_media::Image;
 use std::cmp::Ordering;
 
 pub trait YoloSegmentInference {
-    fn inference_yolo(&self, tensor: Image, confidence: f32, probability_mask: f32) -> Result<Vec<YoloInferenceResult>>;
+    fn inference_yolo(
+        &self,
+        tensor: Image,
+        confidence: f32,
+        probability_mask: f32,
+    ) -> Result<Vec<YoloInferenceResult>>;
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +32,12 @@ pub struct YoloInferenceResult {
 }
 
 impl YoloSegmentInference for OnnxSession {
-    fn inference_yolo(&self, mut image: Image, conf_thres: f32, iou_thres: f32) -> Result<Vec<YoloInferenceResult>> {
+    fn inference_yolo(
+        &self,
+        mut image: Image,
+        conf_thres: f32,
+        iou_thres: f32,
+    ) -> Result<Vec<YoloInferenceResult>> {
         let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
             .add_context("scale", "640:640:force_original_aspect_ratio=decrease")?
             .add_context("pad", "640:640:(ow-iw)/2:(oh-ih)/2:#727272")?
@@ -44,14 +54,15 @@ impl YoloSegmentInference for OnnxSession {
 
                 INFERENCE_CUDA
                     .normalise_pixel_div()
-                    .launch(cfg, (
-                        &mut tensor,
-                        &buffer,
-                        buffer.len()
-                    ))?;
+                    .launch(cfg, (&mut tensor, &buffer, buffer.len()))?;
 
                 let back = TensorRefMut::from_raw(
-                    MemoryInfo::new(AllocationDevice::CUDA, 0, AllocatorType::Device, MemoryType::Default)?,
+                    MemoryInfo::new(
+                        AllocationDevice::CUDA,
+                        0,
+                        AllocatorType::Device,
+                        MemoryType::Default,
+                    )?,
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
                     vec![1, 3, 640, 640],
                 )?;
@@ -66,7 +77,10 @@ impl YoloSegmentInference for OnnxSession {
         let outputs = self.session.run([tensor.into()])?;
         debug!("Finish running model");
 
-        let output_first = outputs["output0"].try_extract_tensor::<f32>()?.t().into_owned();
+        let output_first = outputs["output0"]
+            .try_extract_tensor::<f32>()?
+            .t()
+            .into_owned();
         let output_first = output_first.squeeze().into_dimensionality::<Ix2>()?;
 
         let output_second = outputs["output1"].try_extract_tensor::<f32>()?.into_owned();
@@ -81,13 +95,16 @@ impl YoloSegmentInference for OnnxSession {
             .into_par_iter()
             .filter(|box_output| {
                 box_output
-                    .slice(s![4 .. box_output.len() - 32])
+                    .slice(s![4..box_output.len() - 32])
                     .iter()
                     .any(|&score| score > conf_thres)
             })
             .map(|box_output| {
-                let score = box_output.slice(s![4 .. box_output.len() - 32]);
-                let score = score.iter().max_by(|&a, &b| a.partial_cmp(b).unwrap_or(Ordering::Equal)).unwrap_or(&0.0);
+                let score = box_output.slice(s![4..box_output.len() - 32]);
+                let score = score
+                    .iter()
+                    .max_by(|&a, &b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+                    .unwrap_or(&0.0);
                 (box_output, *score)
             })
             .map(|(box_output, score)| {
@@ -97,7 +114,7 @@ impl YoloSegmentInference for OnnxSession {
                 let x2 = x + w / 2.;
                 let y2 = y + h / 2.;
 
-                let feature_mask = box_output.slice(s![box_output.len() - 32 ..]);
+                let feature_mask = box_output.slice(s![box_output.len() - 32..]);
                 let feature_mask = feature_mask.to_shape((1, 32)).unwrap();
 
                 let mask = {
@@ -110,8 +127,7 @@ impl YoloSegmentInference for OnnxSession {
                     let x2 = x2 as usize;
                     let y2 = y2 as usize;
 
-                    mask
-                        .iter()
+                    mask.iter()
                         .enumerate()
                         .map(|(index, value)| {
                             let y = index / 640;
@@ -122,13 +138,20 @@ impl YoloSegmentInference for OnnxSession {
                 };
 
                 let boxed = Box { x1, y1, x2, y2 };
-                let classify = box_output.slice(s![4 .. box_output.len() - 32]).iter()
+                let classify = box_output
+                    .slice(s![4..box_output.len() - 32])
+                    .iter()
                     .enumerate()
                     .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                     .map(|(index, _)| index)
                     .unwrap();
 
-                YoloInferenceResult { boxed, classify, mask, score }
+                YoloInferenceResult {
+                    boxed,
+                    classify,
+                    mask,
+                    score,
+                }
             })
             .collect::<Vec<_>>();
 

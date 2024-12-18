@@ -14,29 +14,34 @@ impl ApplyMask for Image {
         let mut data = self.raw_data()?;
         let ptr = SafePtr::new(data.as_mut_ptr());
 
-        (0 .. (self.get_width() * self.get_height() * 3) as usize)
+        (0..(self.get_width() * self.get_height() * 3) as usize)
             .into_par_iter()
             .for_each(|index| {
-                if !unsafe {
-                    *mask.get_unchecked(index / 3)
-                } { return; }
+                if !unsafe { *mask.get_unchecked(index / 3) } {
+                    return;
+                }
 
-                match (index % 3, apply_color.0 > 0, apply_color.1 > 0, apply_color.2 > 0) {
+                match (
+                    index % 3,
+                    apply_color.0 > 0,
+                    apply_color.1 > 0,
+                    apply_color.2 > 0,
+                ) {
                     (0, true, _, _) => unsafe {
                         let deref = *ptr.add(index);
                         let after = deref.saturating_add(apply_color.0);
                         ptr.add(index).write(after);
-                    }
+                    },
                     (1, _, true, _) => unsafe {
                         let deref = *ptr.add(index);
                         let after = deref.saturating_add(apply_color.1);
                         ptr.add(index).write(after);
-                    }
+                    },
                     (2, _, _, true) => unsafe {
                         let deref = *ptr.add(index);
                         let after = deref.saturating_add(apply_color.2);
                         ptr.add(index).write(after);
-                    }
+                    },
                     _ => {}
                 }
             });

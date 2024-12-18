@@ -9,10 +9,7 @@ pub struct AVFrameCollector<'a> {
 
 impl<'a> AVFrameCollector<'a> {
     pub fn new(frames: Vec<&'a AVFrame>, _segment: Option<AVMemorySegment>) -> Self {
-        AVFrameCollector {
-            frames,
-            _segment,
-        }
+        AVFrameCollector { frames, _segment }
     }
 
     pub fn frames(&self, frame_index: usize) -> PixelIterator {

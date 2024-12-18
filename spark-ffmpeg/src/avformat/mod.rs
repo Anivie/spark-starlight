@@ -1,9 +1,9 @@
 use spark_proc_macro::wrap_ffmpeg;
 use std::collections::HashMap;
 
-pub mod avformat_context;
-pub mod av_stream;
 pub mod av_frame_reader;
+pub mod av_stream;
+pub mod avformat_context;
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]

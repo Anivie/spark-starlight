@@ -6,9 +6,7 @@ use anyhow::{anyhow, Result};
 
 impl AVFrame {
     pub fn new() -> Result<Self> {
-        let frame = unsafe {
-            av_frame_alloc()
-        };
+        let frame = unsafe { av_frame_alloc() };
 
         if frame.is_null() {
             Err(anyhow!("Failed to allocate frame"))
@@ -34,18 +32,23 @@ impl AVFrame {
                 self.width,
                 self.height,
                 format as i32,
-                32
+                32,
             )
         };
 
         Ok(need_size)
     }
-    
+
     pub fn pixel_format(&self) -> Result<AVPixelFormat> {
         Ok(AVPixelFormat::try_from(self.format)?)
     }
 
-    pub fn fill_arrays(&mut self, data: *const u8, format: AVPixelFormat, size: (i32, i32)) -> Result<i32> {
+    pub fn fill_arrays(
+        &mut self,
+        data: *const u8,
+        format: AVPixelFormat,
+        size: (i32, i32),
+    ) -> Result<i32> {
         let need_size = native! {
             av_image_fill_arrays(
                 self.data.as_ptr().cast_mut(),
@@ -65,14 +68,12 @@ impl AVFrame {
 impl DeepClone for AVFrame {
     fn deep_clone(&self) -> Result<Self> {
         let mut new = AVFrame::new()?;
-        let (new_ref, old_ref) = unsafe {
-            (&mut *new.inner, &*self.inner)
-        };
+        let (new_ref, old_ref) = unsafe { (&mut *new.inner, &*self.inner) };
 
         new_ref.clone_from(old_ref);
         new.alloc_image(AVPixelFormat::try_from(self.format)?)?;
 
-        unsafe  {
+        unsafe {
             av_image_copy(
                 new_ref.data.as_ptr().cast_mut(),
                 new_ref.linesize.as_ptr().cast_mut(),
@@ -80,7 +81,7 @@ impl DeepClone for AVFrame {
                 old_ref.linesize.as_ptr(),
                 AVPixelFormat::try_from(old_ref.format)? as i32,
                 old_ref.width,
-                old_ref.height
+                old_ref.height,
             )
         }
 

@@ -18,6 +18,7 @@ pub struct Box<T: Num> {
 pub enum SamPrompt<T: Num> {
     Box(Box<T>),
     Point(Point<T>),
+    Both(Point<T>, Box<T>),
 }
 
 impl<T: Num> SamPrompt<T> {
@@ -34,5 +35,19 @@ impl<T: Num> SamPrompt<T> {
             height,
         };
         SamPrompt::Box(boxes)
+    }
+
+    pub fn both(boxes: (T, T, T, T), point: (T, T)) -> SamPrompt<T> {
+        let boxes = Box {
+            x: boxes.0,
+            y: boxes.1,
+            width: boxes.2,
+            height: boxes.3,
+        };
+        let point = Point {
+            x: point.0,
+            y: point.1,
+        };
+        SamPrompt::Both(point, boxes)
     }
 }

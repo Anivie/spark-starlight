@@ -12,7 +12,7 @@ num = "0.4.3"
 
 anyhow = "1.0.94"
 
-openblas-src = { version = "0.10", features = ["cblas", "system"] }
+#openblas-src = { version = "0.10", features = ["cblas", "system"] }
 
 cudarc = { version = "0.12.1", features = ["cuda-12050", "cudnn"] }
 
@@ -21,7 +21,7 @@ spark-media = { path = "../spark-media" }
 
 [dependencies.ndarray]
 version = "0.16.1"
-features = ["rayon", "matrixmultiply-threading", "blas"]
+features = ["rayon", "matrixmultiply-threading"]
 
 [dependencies.ort]
 git = "https://github.com/pykeio/ort.git"

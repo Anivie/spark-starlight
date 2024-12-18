@@ -1,6 +1,8 @@
 use crate::avformat::{AVFormatContext, AVFormatContextRaw};
 use crate::avpacket::AVPacket;
-use crate::ffi::{av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat};
+use crate::ffi::{
+    av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat,
+};
 use crate::ffi_enum::AVPixelFormat;
 use anyhow::{anyhow, Result};
 use std::ffi::CString;
@@ -11,22 +13,23 @@ pub trait OpenFileToAVFormatContext {
     fn open_file(path: impl AsRef<Path>, format: Option<&AVInputFormat>) -> Result<Self>
     where
         Self: Sized;
-    fn open_file_arg<'a>(path: &str, format: Option<&AVInputFormat>, dictionary: &'a mut AVDictionary) -> Result<(Self, &'a AVDictionary)>
+    fn open_file_arg<'a>(
+        path: &str,
+        format: Option<&AVInputFormat>,
+        dictionary: &'a mut AVDictionary,
+    ) -> Result<(Self, &'a AVDictionary)>
     where
         Self: Sized;
 }
 
 impl OpenFileToAVFormatContext for AVFormatContext {
     fn open_file(path: impl AsRef<Path>, format: Option<&AVInputFormat>) -> Result<Self> {
-        let mut av_format_context = unsafe {
-            avformat_alloc_context()
-        };
+        let mut av_format_context = unsafe { avformat_alloc_context() };
 
         let path = CString::new(
-            path
-                .as_ref()
+            path.as_ref()
                 .to_str()
-                .ok_or(anyhow!("Fail to parse path."))?
+                .ok_or(anyhow!("Fail to parse path."))?,
         )?;
 
         ffmpeg! {
@@ -40,20 +43,22 @@ impl OpenFileToAVFormatContext for AVFormatContext {
             ) or "Failed to open file"
         }
 
-        Ok(AVFormatContext{
+        Ok(AVFormatContext {
             inner: av_format_context,
             opened: false,
             scanned_stream: Default::default(),
         })
     }
 
-    fn open_file_arg<'a>(path: &str, format: Option<&AVInputFormat>, dictionary: &'a mut AVDictionary) -> Result<(Self, &'a AVDictionary)>
+    fn open_file_arg<'a>(
+        path: &str,
+        format: Option<&AVInputFormat>,
+        dictionary: &'a mut AVDictionary,
+    ) -> Result<(Self, &'a AVDictionary)>
     where
-        Self: Sized
+        Self: Sized,
     {
-        let mut av_format_context = unsafe {
-            avformat_alloc_context()
-        };
+        let mut av_format_context = unsafe { avformat_alloc_context() };
         let path = CString::new(path)?;
 
         ffmpeg! {
@@ -65,11 +70,14 @@ impl OpenFileToAVFormatContext for AVFormatContext {
             ) or "Failed to open file"
         }
 
-        Ok((AVFormatContext{
-            inner: av_format_context,
-            opened: false,
-            scanned_stream: Default::default(),
-        }, dictionary))
+        Ok((
+            AVFormatContext {
+                inner: av_format_context,
+                opened: false,
+                scanned_stream: Default::default(),
+            },
+            dictionary,
+        ))
     }
 }
 
@@ -83,9 +91,7 @@ impl AVFormatContext {
     }
 
     pub fn pixel_format(&self, stream_index: usize) -> Result<AVPixelFormat> {
-        let format = unsafe {
-            (*(**(*self.inner).streams.add(stream_index)).codecpar).format
-        };
+        let format = unsafe { (*(**(*self.inner).streams.add(stream_index)).codecpar).format };
 
         Ok(AVPixelFormat::try_from(format)?)
     }
@@ -97,7 +103,9 @@ fn test_video_stream() {
     let mut a = AVFormatContext::open_file("./data/a.png", None).unwrap();
     let stream = a.video_stream().unwrap();
     stream.for_each(|(_, x)| {
-        unsafe { println!("{:?}", (*x.codecpar).codec_type); }
+        unsafe {
+            println!("{:?}", (*x.codecpar).codec_type);
+        }
         unsafe { assert_eq!((*x.codecpar).codec_type, AVMediaType_AVMEDIA_TYPE_VIDEO) }
     });
 }
@@ -106,9 +114,11 @@ fn test_video_stream() {
 fn test_format() {
     use crate::avformat::AVMediaType;
     let mut a = AVFormatContext::open_file("./data/a.png", None).unwrap();
-    a.find_stream(AVMediaType::VIDEO).and_then(|x| {
-        println!("{:?}", x);
-        Ok(())
-    }).unwrap();
+    a.find_stream(AVMediaType::VIDEO)
+        .and_then(|x| {
+            println!("{:?}", x);
+            Ok(())
+        })
+        .unwrap();
     println!("a: {}", a.nb_streams);
 }

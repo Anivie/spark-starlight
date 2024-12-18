@@ -1,7 +1,9 @@
 use crate::avcodec::AVCodecContext;
 use crate::avframe::AVFrame;
 use crate::avpacket::AVPacket;
-use crate::ffi::{avcodec_receive_frame, avcodec_receive_packet, avcodec_send_frame, avcodec_send_packet};
+use crate::ffi::{
+    avcodec_receive_frame, avcodec_receive_packet, avcodec_send_frame, avcodec_send_packet,
+};
 use anyhow::Result;
 
 impl AVCodecContext {

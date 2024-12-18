@@ -4,9 +4,9 @@
 
 use proc_macro::TokenStream;
 
+mod clone_derive;
 mod keyword;
 mod native_wrapper;
-mod clone_derive;
 
 #[proc_macro_derive(CloneFrom)]
 pub fn clone_from(token_stream: TokenStream) -> TokenStream {

@@ -1,13 +1,13 @@
 #![feature(substr_range)]
 #![feature(let_chains)]
 
-use std::collections::HashMap;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use bindgen::FieldVisibilityKind;
-use std::env;
-use std::path::PathBuf;
 use convert_case::{Case, Casing};
 use rayon::prelude::*;
+use std::collections::HashMap;
+use std::env;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 struct Cat;
@@ -24,7 +24,7 @@ impl ParseCallbacks for Cat {
 
 fn main() {
     // Tell cargo to look for shared libraries in the specified directory
-    println!("cargo:rustc-link-search=/root/ffmpeg/lib");
+    println!("cargo:rustc-link-search=/home/anivie/SDK/ffmpeg/lib");
 
     // Tell cargo to tell rustc to link the system ffmpeg
     // shared library.
@@ -41,7 +41,7 @@ fn main() {
         // The input header we would like to generate
         // bindings for.
         .header("./ffi/ffmpeg.h")
-        .clang_arg("-I/root/ffmpeg/include")
+        .clang_arg("-I/home/anivie/SDK/ffmpeg/include")
         .generate_comments(false)
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
@@ -75,27 +75,33 @@ fn main() {
 }
 
 fn extract_enum(target: &str, pattern: &str, types: &str) -> String {
-    let name = pattern.chars().take_while(|x| *x != '_').collect::<String>();
+    let name = pattern
+        .chars()
+        .take_while(|x| *x != '_')
+        .collect::<String>();
     let middle = target
         .split('\n')
         .par_bridge()
         .filter(|x| x.contains(pattern))
         .map(|x| {
-            let string = x.chars()
-                .skip(10)
-                .skip(pattern.len())
-                .collect::<String>();
+            let string = x.chars().skip(10).skip(pattern.len()).collect::<String>();
             let string = string
                 .replace(format!(": {}", name).as_str(), "")
                 .replace(";", ",\n")
                 .to_case(Case::UpperCamel);
-            let string = if let Some(c) = string.chars().next() && c.is_ascii_digit() {
+            let string = if let Some(c) = string.chars().next()
+                && c.is_ascii_digit()
+            {
                 format!("_{}", string)
-            }else {
+            } else {
                 string
             };
 
-            let tail = string.chars().rev().take_while(|x| *x != '=').collect::<String>();
+            let tail = string
+                .chars()
+                .rev()
+                .take_while(|x| *x != '=')
+                .collect::<String>();
             let tail = tail.chars().rev().collect::<String>();
 
             (tail, format!("    {}", string))

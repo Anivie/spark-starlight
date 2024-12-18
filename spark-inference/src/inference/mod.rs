@@ -3,7 +3,10 @@ use ndarray::{Array2, CowArray, Dim, Ix};
 pub mod sam;
 pub mod yolo;
 
-pub(super) fn linear_interpolate(input: &CowArray<f32, Dim<[Ix; 2]>>, new_shape: (usize, usize)) -> Array2<f32> {
+pub(super) fn linear_interpolate(
+    input: &CowArray<f32, Dim<[Ix; 2]>>,
+    new_shape: (usize, usize),
+) -> Array2<f32> {
     let (old_height, old_width) = input.dim();
     let (new_height, new_width) = new_shape;
     let mut output = Array2::<f32>::zeros((new_height, new_width));
@@ -29,11 +32,10 @@ pub(super) fn linear_interpolate(input: &CowArray<f32, Dim<[Ix; 2]>>, new_shape:
             let dy = y - y0 as f32;
 
             // Bilinear interpolation formula
-            let interpolated_value =
-                p00 * (1.0 - dx) * (1.0 - dy) +
-                    p01 * dx * (1.0 - dy) +
-                    p10 * (1.0 - dx) * dy +
-                    p11 * dx * dy;
+            let interpolated_value = p00 * (1.0 - dx) * (1.0 - dy)
+                + p01 * dx * (1.0 - dy)
+                + p10 * (1.0 - dx) * dy
+                + p11 * dx * dy;
 
             output[[i, j]] = interpolated_value;
         }

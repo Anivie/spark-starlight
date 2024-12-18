@@ -8,7 +8,7 @@ use syn::{braced, parenthesized, parse_macro_input, Token};
 
 struct CloneFrom {
     name: Ident,
-    fields: HashMap<Ident, proc_macro2::TokenStream>
+    fields: HashMap<Ident, proc_macro2::TokenStream>,
 }
 
 impl Parse for CloneFrom {
@@ -23,7 +23,10 @@ impl Parse for CloneFrom {
                             break Ok((name, current));
                         }
                         TokenTree::Ident(ident) => {
-                            if ident.to_string() != "pub" &&ident.to_string() != "struct" && name.is_none() {
+                            if ident.to_string() != "pub"
+                                && ident.to_string() != "struct"
+                                && name.is_none()
+                            {
                                 name = Some(ident);
                             }
                         }
@@ -64,16 +67,18 @@ impl Parse for CloneFrom {
                         match tree {
                             TokenTree::Punct(punct) if punct.as_char() == ',' => {
                                 if let Some((tree, next)) = next.token_tree() {
-                                    if let TokenTree::Punct(punct)  = tree &&
-                                        punct.as_char() == '>'
-                                    { break Ok((back, next.token_tree().unwrap().1)); }
+                                    if let TokenTree::Punct(punct) = tree
+                                        && punct.as_char() == '>'
+                                    {
+                                        break Ok((back, next.token_tree().unwrap().1));
+                                    }
                                 }
                                 break Ok((back, next));
                             }
                             _ => {
                                 back.extend(proc_macro2::TokenStream::from(tree));
                                 current = next;
-                            },
+                            }
                         }
                     } else {
                         return Err(x.error("No available type found"));
@@ -87,24 +92,16 @@ impl Parse for CloneFrom {
             }
         }
 
-        Ok(Self {
-            name,
-            fields,
-        })
+        Ok(Self { name, fields })
     }
 }
 
 pub fn clone_from(token_stream: TokenStream) -> TokenStream {
-    let CloneFrom {
-        name,
-        fields
-    } = parse_macro_input!(token_stream as CloneFrom);
+    let CloneFrom { name, fields } = parse_macro_input!(token_stream as CloneFrom);
 
     let fields: HashMap<Ident, proc_macro2::TokenStream> = fields
         .into_iter()
-        .filter(|(_, value)| {
-            !value.to_string().contains("*")
-        })
+        .filter(|(_, value)| !value.to_string().contains("*"))
         .collect();
 
     let field_name = fields.keys();

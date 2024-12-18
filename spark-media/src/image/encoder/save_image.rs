@@ -8,7 +8,11 @@ use spark_ffmpeg::ffi_enum::AVPixelFormat;
 use std::path::Path;
 
 impl Image {
-    pub fn new_with_empty(size: (i32, i32), pixel_format: AVPixelFormat, codec_id: AVCodecID) -> Result<Self> {
+    pub fn new_with_empty(
+        size: (i32, i32),
+        pixel_format: AVPixelFormat,
+        codec_id: AVCodecID,
+    ) -> Result<Self> {
         let codec = AVCodec::new_encoder_with_id(codec_id)?;
 
         let mut codec_context = AVCodecContext::new(size, pixel_format, &codec, None)?;
@@ -30,13 +34,16 @@ impl Image {
             inner: ImageInner {
                 packet: None,
                 frame,
-            }
+            },
         })
     }
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        if let Some(path) = path.as_ref().parent() && path.exists() {
-            std::fs::create_dir_all(path).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
+        if let Some(path) = path.as_ref().parent()
+            && path.exists()
+        {
+            std::fs::create_dir_all(path)
+                .map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
         }
 
         self.try_encoder(None)?;
@@ -53,17 +60,22 @@ impl Image {
     }
 
     pub fn save_with_format(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        if let Some(path) = path.as_ref().parent() && path.exists() {
-            std::fs::create_dir_all(path).map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
+        if let Some(path) = path.as_ref().parent()
+            && path.exists()
+        {
+            std::fs::create_dir_all(path)
+                .map_err(|_| anyhow!("Fail to save image: folder not exist!"))?
         }
 
         let extension = path.as_ref().extension();
         if let Some(extension) = extension {
             let extension = extension.to_ascii_uppercase();
-            let extension = extension.to_str().ok_or(anyhow!("Fail to cast extension to str."))?;
+            let extension = extension
+                .to_str()
+                .ok_or(anyhow!("Fail to cast extension to str."))?;
             let id = match extension {
                 "PNG" => AVCodecID::Png,
-                _ => bail!("UNSUPPORTED FILE FORMAT")
+                _ => bail!("UNSUPPORTED FILE FORMAT"),
             };
             self.try_encoder(Some(id))?;
         } else {

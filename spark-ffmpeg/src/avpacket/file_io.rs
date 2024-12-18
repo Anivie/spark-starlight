@@ -8,9 +8,7 @@ use std::ptr::slice_from_raw_parts;
 impl AVPacket {
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let mut file = File::create(path)?;
-        let slice = unsafe {
-            &*slice_from_raw_parts(self.data, self.size as usize)
-        };
+        let slice = unsafe { &*slice_from_raw_parts(self.data, self.size as usize) };
         file.write(slice)?;
 
         Ok(())

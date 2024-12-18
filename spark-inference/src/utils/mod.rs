@@ -1,2 +1,2 @@
-pub mod masks;
 pub mod graph;
+pub mod masks;

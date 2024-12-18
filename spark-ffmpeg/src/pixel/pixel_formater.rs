@@ -35,7 +35,7 @@ impl Iterator for PixelIterator<'_> {
 
         if self.current_y >= self.frame.height as usize {
             None
-        }else {
+        } else {
             Some((self.current_x as u32, self.current_y as u32, rgb))
         }
     }

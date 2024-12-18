@@ -1,16 +1,17 @@
 use crate::avfilter_context::AVFilterContext;
 use crate::avfilter_graph::AVFilterGraph;
 use crate::avframe::AVFrame;
-use crate::ffi::{av_buffersink_get_frame, av_buffersrc_add_frame, avfilter_graph_alloc, avfilter_graph_config, avfilter_link};
+use crate::ffi::{
+    av_buffersink_get_frame, av_buffersrc_add_frame, avfilter_graph_alloc, avfilter_graph_config,
+    avfilter_link,
+};
 use crate::CloneFrom;
 use anyhow::{anyhow, Result};
 use std::ptr::null_mut;
 
 impl AVFilterGraph {
     pub fn new() -> Result<Self> {
-        let inner = unsafe {
-            avfilter_graph_alloc()
-        };
+        let inner = unsafe { avfilter_graph_alloc() };
 
         if inner.is_null() {
             return Err(anyhow!("Could not allocate AVFilterGraph"));
@@ -43,7 +44,12 @@ impl AVFilterGraph {
         Ok(())
     }
 
-    pub fn add_context_with_name(&mut self, name: &'static str, filter_name: &'static str, args: Option<&str>) -> Result<()> {
+    pub fn add_context_with_name(
+        &mut self,
+        name: &'static str,
+        filter_name: &'static str,
+        args: Option<&str>,
+    ) -> Result<()> {
         let context = AVFilterContext::new_with(name, filter_name, args, self)?;
         self.contexts.push(context);
 
