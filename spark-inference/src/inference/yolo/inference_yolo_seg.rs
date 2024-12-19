@@ -119,9 +119,9 @@ impl YoloSegmentInference for OnnxSession {
 
                 let mask = {
                     let mask = feature_mask.dot(&output_second);
-                    let mask = mask.to_shape((160, 160)).unwrap();
-                    let mask = linear_interpolate(&mask, (640, 640));
-                    let mask = sigmoid(mask.into_owned());
+                    let mask = mask.into_shape_with_order((160, 160)).unwrap();
+                    let mask = linear_interpolate(mask.into_owned(), (640, 640));
+                    let mask = sigmoid(mask);
                     let x1 = x1 as usize;
                     let y1 = y1 as usize;
                     let x2 = x2 as usize;

@@ -1,10 +1,11 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
+use crate::inference::linear_interpolate;
 use crate::utils::graph::SamPrompt;
 use crate::INFERENCE_CUDA;
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
-use ndarray::{array, Array, Array2, ArrayBase, ArrayViewD, Dim, Ix, OwnedRepr};
+use ndarray::{array, s, Array, Array2, ArrayBase, ArrayViewD, OwnedRepr};
 use ort::inputs;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::session::{SessionInputValue, SessionOutputs};
@@ -26,7 +27,8 @@ pub trait SamImageInference {
 
 pub struct SAM2ImageInferenceSession {
     image_encoder: OnnxSession,
-    image_decoder: OnnxSession,
+    mask_decoder: OnnxSession,
+    prompt_encoder: OnnxSession,
 }
 
 pub struct SamEncoderOutput<'a> {
@@ -37,22 +39,35 @@ pub struct SamEncoderOutput<'a> {
 
 impl SAM2ImageInferenceSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
+        let image_encoder = OnnxSession::new(
+            folder_path.as_ref().join("image_encoder.onnx"),
+            ExecutionProvider::CUDA,
+        )?;
+        let mask_decoder = OnnxSession::new(
+            folder_path.as_ref().join("mask_decoder.onnx"),
+            ExecutionProvider::CUDA,
+        )?;
+        let prompt_encoder = OnnxSession::new(
+            folder_path.as_ref().join("prompt_encoder.onnx"),
+            ExecutionProvider::CUDA,
+        )?;
+
         Ok(Self {
-            image_encoder: OnnxSession::new(
-                folder_path.as_ref().join("image_encoder.onnx"),
-                ExecutionProvider::CUDA,
-            )?,
-            image_decoder: OnnxSession::new(
-                folder_path.as_ref().join("image_decoder.onnx"),
-                ExecutionProvider::CUDA,
-            )?,
+            image_encoder,
+            mask_decoder,
+            prompt_encoder,
         })
     }
 
-    pub(super) fn raw(image_encoder: OnnxSession, image_decoder: OnnxSession) -> Self {
+    pub(super) fn raw(
+        image_encoder: OnnxSession,
+        mask_decoder: OnnxSession,
+        prompt_encoder: OnnxSession,
+    ) -> Self {
         Self {
             image_encoder,
-            image_decoder,
+            mask_decoder,
+            prompt_encoder,
         }
     }
 }
@@ -83,14 +98,19 @@ impl SamImageInference for SAM2ImageInferenceSession {
     ) -> Result<BitVec> {
         let decoder_output = self.inference_image_decoder(
             encoded_result.origin_size,
-            encoded_result.encoder_output["image_embeddings"].try_extract_tensor::<f32>()?,
-            encoded_result.encoder_output["high_res_features1"].try_extract_tensor::<f32>()?,
-            encoded_result.encoder_output["high_res_features2"].try_extract_tensor::<f32>()?,
+            encoded_result.encoder_output["vision_features"].try_extract_tensor::<f32>()?,
+            encoded_result.encoder_output["backbone_fpn_0"].try_extract_tensor::<f32>()?,
+            encoded_result.encoder_output["backbone_fpn_1"].try_extract_tensor::<f32>()?,
             prompt,
         )?;
 
         let pred_mask = decoder_output["masks"].try_extract_tensor::<f32>()?;
-        // let iou_predictions = decoder_output["iou_predictions"].try_extract_tensor::<f32>()?;
+        let iou_predictions = decoder_output["iou_pred"].try_extract_tensor::<f32>()?;
+        println!("mask: {:?}, iou: {:?}", pred_mask.shape(), iou_predictions);
+
+        let pred_mask = pred_mask.slice(s![0, 0, .., ..]);
+        let pred_mask = pred_mask.into_shape_with_order((256, 256))?;
+        let pred_mask = linear_interpolate(pred_mask.into_owned(), (1024, 1024));
 
         let mut back = BitVec::with_capacity(pred_mask.len());
 
@@ -140,7 +160,7 @@ impl SAM2ImageInferenceSession {
 
         Ok(self
             .image_encoder
-            .run(vec![("input", SessionInputValue::from(tensor))])?)
+            .run(vec![("input_image", SessionInputValue::from(tensor))])?)
     }
 
     pub(crate) fn inference_image_decoder(
@@ -153,8 +173,7 @@ impl SAM2ImageInferenceSession {
 
         prompt: SamPrompt<f32>,
     ) -> Result<SessionOutputs> {
-        let im_size = array![image_size.1 as i64, image_size.0 as i64];
-        let mask_input: ArrayBase<OwnedRepr<f32>, Dim<[Ix; 4]>> = Array::zeros((1, 1, 256, 256));
+        let mask_input: ArrayBase<OwnedRepr<f32>, _> = Array::zeros((1, 256, 256));
 
         let trans_prompt = match &prompt {
             SamPrompt::Box(boxes) => {
@@ -184,9 +203,9 @@ impl SAM2ImageInferenceSession {
         };
 
         let point_labels = match prompt {
-            SamPrompt::Point(_) => Array2::from_shape_vec((1, 1), vec![1_f32])?,
-            SamPrompt::Box(_) => Array2::from_shape_vec((1, 2), vec![1_f32, 1_f32])?,
-            SamPrompt::Both(_, _) => Array2::from_shape_vec((1, 3), vec![1_f32, 1_f32, 1_f32])?,
+            SamPrompt::Point(_) => Array2::from_shape_vec((1, 1), vec![1])?,
+            SamPrompt::Box(_) => Array2::from_shape_vec((1, 2), vec![1, 1])?,
+            SamPrompt::Both(_, _) => Array2::from_shape_vec((1, 3), vec![1, 1, 1])?,
         };
 
         let prompt = match prompt {
@@ -195,16 +214,21 @@ impl SAM2ImageInferenceSession {
             SamPrompt::Both(_, _) => trans_prompt.into_shape_with_order((1, 3, 2))?,
         };
 
-        let result = self.image_decoder.run(inputs![
-            "point_coords" => prompt,
-            "point_labels" => point_labels,
-            "orig_im_size" => im_size,
-            "has_mask_input" => array![0_f32],
-            "mask_input" => mask_input,
+        let prompt_result = self.prompt_encoder.run(inputs![
+            "coords" => prompt,
+            "labels" => point_labels,
+            "masks" => mask_input,
+            "masks_enable" => array![0],
+        ]?)?;
 
+        let result = self.mask_decoder.run(inputs![
             "image_embeddings" => feats,
             "high_res_features1" => feat0,
             "high_res_features2" => feat1,
+
+            "image_pe" => prompt_result["dense_pe"].try_extract_tensor::<f32>()?,
+            "sparse_prompt_embeddings" => prompt_result["sparse_embeddings"].try_extract_tensor::<f32>()?,
+            "dense_prompt_embeddings" => prompt_result["dense_embeddings"].try_extract_tensor::<f32>()?,
         ]?)?;
 
         Ok(result)

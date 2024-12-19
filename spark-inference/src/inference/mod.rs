@@ -1,12 +1,9 @@
-use ndarray::{Array2, CowArray, Dim, Ix};
+use ndarray::Array2;
 
 pub mod sam;
 pub mod yolo;
 
-pub(super) fn linear_interpolate(
-    input: &CowArray<f32, Dim<[Ix; 2]>>,
-    new_shape: (usize, usize),
-) -> Array2<f32> {
+pub(super) fn linear_interpolate(input: Array2<f32>, new_shape: (usize, usize)) -> Array2<f32> {
     let (old_height, old_width) = input.dim();
     let (new_height, new_width) = new_shape;
     let mut output = Array2::<f32>::zeros((new_height, new_width));

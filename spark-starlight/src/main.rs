@@ -18,10 +18,10 @@ use spark_media::filter::filter::AVFilter;
 use spark_media::{Image, RGB};
 
 fn main() -> Result<()> {
-    let yolo = YoloDetectSession::new("./data/model")?;
-    let sam2 = SAM2ImageInferenceSession::new("./data/model/other")?;
+    let yolo = YoloDetectSession::new("../data/model")?;
+    let sam2 = SAM2ImageInferenceSession::new("../data/model/other2")?;
 
-    let path = "./data/image/c.jpg";
+    let path = "../data/image/d4.jpg";
     let image = Image::open_file(path)?;
 
     let results = yolo.inference_yolo(image, 0.3)?;
@@ -59,6 +59,7 @@ fn main() -> Result<()> {
 
     let mut image = Image::open_file(path)?;
     let mut filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+        .add_context("scale", "1024:1024")?
         .add_context("format", "rgb24")?;
 
     for x in result_highway.iter() {
@@ -89,7 +90,7 @@ fn main() -> Result<()> {
     for x in highway_mask {
         image.layering_mask(&x?, RGB(0, 125, 0))?;
     }
-    image.save_with_format("./data/out/a_out.png")?;
+    image.save_with_format("../data/out/a_out.png")?;
 
     Ok(())
 }
