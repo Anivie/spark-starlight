@@ -1,7 +1,7 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use crate::inference::linear_interpolate;
 use crate::utils::graph::SamPrompt;
-use crate::INFERENCE_CUDA;
+use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
@@ -41,15 +41,15 @@ impl SAM2ImageInferenceSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
         let image_encoder = OnnxSession::new(
             folder_path.as_ref().join("image_encoder.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let mask_decoder = OnnxSession::new(
             folder_path.as_ref().join("mask_decoder.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let prompt_encoder = OnnxSession::new(
             folder_path.as_ref().join("prompt_encoder.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
 
         Ok(Self {
@@ -125,23 +125,23 @@ impl SamImageInference for SAM2ImageInferenceSession {
 impl SAM2ImageInferenceSession {
     pub(crate) fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<SessionOutputs> {
         static MEAN: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
-            INFERENCE_CUDA
+            INFERENCE_SAM
                 .htod_sync_copy(&[0.485, 0.456, 0.406])
                 .unwrap()
         });
         static STD: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
-            INFERENCE_CUDA
+            INFERENCE_SAM
                 .htod_sync_copy(&[0.229, 0.224, 0.225])
                 .unwrap()
         });
 
-        let buffer = INFERENCE_CUDA.htod_sync_copy(image.as_slice())?;
+        let buffer = INFERENCE_SAM.htod_sync_copy(image.as_slice())?;
         let cfg = LaunchConfig::for_num_elems((image.len() / 3) as u32);
 
         let tensor: TensorRefMut<'_, f32> = unsafe {
-            let mut tensor = INFERENCE_CUDA.alloc::<f32>(image.len())?;
+            let mut tensor = INFERENCE_SAM.alloc::<f32>(image.len())?;
 
-            INFERENCE_CUDA.normalise_pixel_mean().launch(
+            INFERENCE_SAM.normalise_pixel_mean().launch(
                 cfg,
                 (&mut tensor, &buffer, MEAN.deref(), STD.deref(), image.len()),
             )?;
@@ -204,8 +204,8 @@ impl SAM2ImageInferenceSession {
 
         let point_labels = match prompt {
             SamPrompt::Point(_) => Array2::from_shape_vec((1, 1), vec![1])?,
-            SamPrompt::Box(_) => Array2::from_shape_vec((1, 2), vec![1, 1])?,
-            SamPrompt::Both(_, _) => Array2::from_shape_vec((1, 3), vec![1, 1, 1])?,
+            SamPrompt::Box(_) => Array2::from_shape_vec((1, 2), vec![2, 3])?,
+            SamPrompt::Both(_, _) => Array2::from_shape_vec((1, 3), vec![1, 2, 3])?,
         };
 
         let prompt = match prompt {

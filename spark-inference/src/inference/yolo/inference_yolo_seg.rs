@@ -1,7 +1,7 @@
 use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::OnnxSession;
 use crate::inference::{linear_interpolate, sigmoid};
-use crate::INFERENCE_CUDA;
+use crate::INFERENCE_YOLO;
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
@@ -46,13 +46,13 @@ impl YoloSegmentInference for OnnxSession {
         image.apply_filter(&filter)?;
 
         let tensor = {
-            let buffer = INFERENCE_CUDA.htod_sync_copy(image.raw_data()?.as_slice())?;
+            let buffer = INFERENCE_YOLO.htod_sync_copy(image.raw_data()?.as_slice())?;
             let cfg = LaunchConfig::for_num_elems((buffer.len() / 3) as u32);
 
             let tensor: TensorRefMut<'_, f32> = unsafe {
-                let mut tensor = INFERENCE_CUDA.alloc::<f32>(buffer.len())?;
+                let mut tensor = INFERENCE_YOLO.alloc::<f32>(buffer.len())?;
 
-                INFERENCE_CUDA
+                INFERENCE_YOLO
                     .normalise_pixel_div()
                     .launch(cfg, (&mut tensor, &buffer, buffer.len()))?;
 

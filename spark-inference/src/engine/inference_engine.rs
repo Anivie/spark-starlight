@@ -8,8 +8,9 @@ pub struct OnnxSession {
 }
 
 pub enum ExecutionProvider {
-    CUDA,
-    TensorRT,
+    CPU,
+    CUDA(i32),
+    TensorRT(i32),
 }
 
 impl Deref for OnnxSession {
@@ -25,16 +26,21 @@ impl OnnxSession {
         let session = Session::builder()?
             .with_intra_threads(6)?
             .with_execution_providers([match executor {
-                ExecutionProvider::CUDA => {
+                ExecutionProvider::CUDA(id) => {
                     ort::execution_providers::CUDAExecutionProvider::default()
+                        .with_device_id(id)
                         .build()
                         .error_on_failure()
                 }
-                ExecutionProvider::TensorRT => {
+                ExecutionProvider::TensorRT(id) => {
                     ort::execution_providers::TensorRTExecutionProvider::default()
+                        .with_device_id(id)
                         .build()
                         .error_on_failure()
                 }
+                ExecutionProvider::CPU => ort::execution_providers::CPUExecutionProvider::default()
+                    .build()
+                    .error_on_failure(),
             }])?
             .commit_from_file(url)?;
 

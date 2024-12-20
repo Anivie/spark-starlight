@@ -1,7 +1,7 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use crate::inference::linear_interpolate;
 use crate::utils::graph::SamPrompt;
-use crate::INFERENCE_CUDA;
+use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
@@ -46,45 +46,32 @@ impl SAMVideoInferenceSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
         let image_encoder = OnnxSession::new(
             folder_path.as_ref().join("image_encoder.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let mask_decoder = OnnxSession::new(
             folder_path.as_ref().join("mask_decoder.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let prompt_encoder = OnnxSession::new(
             folder_path.as_ref().join("prompt_encoder.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let mlp = OnnxSession::new(
             folder_path.as_ref().join("mlp.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let memory_encoder = OnnxSession::new(
             folder_path.as_ref().join("memory_encoder.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let memory_attention = OnnxSession::new(
             folder_path.as_ref().join("memory_attention.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let obj_ptr_tpos_proj = OnnxSession::new(
             folder_path.as_ref().join("obj_ptr_tpos_proj.onnx"),
-            ExecutionProvider::CUDA,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
-        println!("mlp input: {:?}, output: {:?}", mlp.inputs, mlp.outputs);
-        println!(
-            "memory_encoder input: {:?}, output: {:?}",
-            memory_encoder.inputs, memory_encoder.outputs
-        );
-        println!(
-            "memory_attention input: {:?}, output: {:?}",
-            memory_attention.inputs, memory_attention.outputs
-        );
-        println!(
-            "obj_ptr_tpos_proj input: {:?}, output: {:?}",
-            obj_ptr_tpos_proj.inputs, obj_ptr_tpos_proj.outputs
-        );
 
         Ok(Self {
             image_encoder,
@@ -127,14 +114,19 @@ impl SamVideoInference for SAMVideoInferenceSession {
             encoded_result.encoder_output["vision_features"].try_extract_tensor::<f32>()?,
             encoded_result.encoder_output["backbone_fpn_0"].try_extract_tensor::<f32>()?,
             encoded_result.encoder_output["backbone_fpn_1"].try_extract_tensor::<f32>()?,
-            prompt,
+            &prompt,
         )?;
 
         let pred_mask = decoder_output["masks"].try_extract_tensor::<f32>()?;
         let iou_predictions = decoder_output["iou_pred"].try_extract_tensor::<f32>()?;
-        println!("mask: {:?}, iou: {:?}", pred_mask.shape(), iou_predictions);
+        let max_index = iou_predictions
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
 
-        let pred_mask = pred_mask.slice(s![0, 0, .., ..]);
+        let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
         let pred_mask = pred_mask.into_shape_with_order((256, 256))?;
         let pred_mask = linear_interpolate(pred_mask.into_owned(), (1024, 1024));
 
@@ -151,23 +143,23 @@ impl SamVideoInference for SAMVideoInferenceSession {
 impl SAMVideoInferenceSession {
     pub(crate) fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<SessionOutputs> {
         static MEAN: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
-            INFERENCE_CUDA
+            INFERENCE_SAM
                 .htod_sync_copy(&[0.485, 0.456, 0.406])
                 .unwrap()
         });
         static STD: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
-            INFERENCE_CUDA
+            INFERENCE_SAM
                 .htod_sync_copy(&[0.229, 0.224, 0.225])
                 .unwrap()
         });
 
-        let buffer = INFERENCE_CUDA.htod_sync_copy(image.as_slice())?;
+        let buffer = INFERENCE_SAM.htod_sync_copy(image.as_slice())?;
         let cfg = LaunchConfig::for_num_elems((image.len() / 3) as u32);
 
         let tensor: TensorRefMut<'_, f32> = unsafe {
-            let mut tensor = INFERENCE_CUDA.alloc::<f32>(image.len())?;
+            let mut tensor = INFERENCE_SAM.alloc::<f32>(image.len())?;
 
-            INFERENCE_CUDA.normalise_pixel_mean().launch(
+            INFERENCE_SAM.normalise_pixel_mean().launch(
                 cfg,
                 (&mut tensor, &buffer, MEAN.deref(), STD.deref(), image.len()),
             )?;
@@ -197,7 +189,7 @@ impl SAMVideoInferenceSession {
         feat0: ArrayViewD<f32>,
         feat1: ArrayViewD<f32>,
 
-        prompt: SamPrompt<f32>,
+        prompt: &SamPrompt<f32>,
     ) -> Result<SessionOutputs> {
         let mask_input: ArrayBase<OwnedRepr<f32>, _> = Array::zeros((1, 256, 256));
 
