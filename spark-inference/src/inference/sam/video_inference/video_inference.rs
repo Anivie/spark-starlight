@@ -1,5 +1,6 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
-use crate::inference::sam::video_inference::SamEncoderOutput;
+use crate::inference::sam::video_inference::inference_state::SamInferenceState;
+use crate::inference::sam::video_inference::{InferenceInput, SamEncoderOutput};
 use crate::utils::graph::SamPrompt;
 use crate::utils::tensor::linear_interpolate;
 use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
@@ -17,22 +18,27 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::LazyLock;
 
-pub trait SamImageInference {
+pub trait SamVideoInference {
     fn encode_image(&self, image: Image) -> Result<SamEncoderOutput>;
     fn inference_frame(
         &self,
-        prompt: SamPrompt<f32>,
+        input: InferenceInput,
         encoded_result: &SamEncoderOutput,
-    ) -> Result<BitVec>;
+    ) -> Result<(BitVec, SamInferenceState)>;
 }
 
-pub struct SAMImageInferenceSession {
+pub struct SAMVideoInferenceSession {
     pub(super) image_encoder: OnnxSession,
     pub(super) mask_decoder: OnnxSession,
     pub(super) prompt_encoder: OnnxSession,
+
+    pub(super) mlp: OnnxSession,
+    pub(super) memory_encoder: OnnxSession,
+    pub(super) memory_attention: OnnxSession,
+    pub(super) obj_ptr_tpos_proj: OnnxSession,
 }
 
-impl SAMImageInferenceSession {
+impl SAMVideoInferenceSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
         let image_encoder = OnnxSession::new(
             folder_path.as_ref().join("image_encoder.onnx"),
@@ -46,16 +52,36 @@ impl SAMImageInferenceSession {
             folder_path.as_ref().join("prompt_encoder.onnx"),
             ExecutionProvider::CPU,
         )?;
+        let mlp = OnnxSession::new(
+            folder_path.as_ref().join("mlp.onnx"),
+            ExecutionProvider::CPU,
+        )?;
+        let memory_encoder = OnnxSession::new(
+            folder_path.as_ref().join("memory_encoder.onnx"),
+            ExecutionProvider::CPU,
+        )?;
+        let memory_attention = OnnxSession::new(
+            folder_path.as_ref().join("memory_attention.onnx"),
+            ExecutionProvider::CPU,
+        )?;
+        let obj_ptr_tpos_proj = OnnxSession::new(
+            folder_path.as_ref().join("obj_ptr_tpos_proj.onnx"),
+            ExecutionProvider::CPU,
+        )?;
 
         Ok(Self {
             image_encoder,
             mask_decoder,
             prompt_encoder,
+            mlp,
+            memory_encoder,
+            memory_attention,
+            obj_ptr_tpos_proj,
         })
     }
 }
 
-impl SamImageInference for SAMImageInferenceSession {
+impl SamVideoInference for SAMVideoInferenceSession {
     fn encode_image(&self, mut image: Image) -> Result<SamEncoderOutput> {
         let (image, image_size) = {
             let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
@@ -76,48 +102,103 @@ impl SamImageInference for SAMImageInferenceSession {
 
     fn inference_frame(
         &self,
-        prompt: SamPrompt<f32>,
+        input: InferenceInput,
         encoded_result: &SamEncoderOutput,
-    ) -> Result<BitVec> {
-        let mask_decoder_output = self.inference_image_decoder(
-            encoded_result.origin_size,
-            encoded_result.encoder_output["vision_features"]
-                .try_extract_tensor::<f32>()?
-                .into_dimensionality::<Ix4>()?,
-            encoded_result.encoder_output["backbone_fpn_0"]
-                .try_extract_tensor::<f32>()?
-                .into_dimensionality::<Ix4>()?,
-            encoded_result.encoder_output["backbone_fpn_1"]
-                .try_extract_tensor::<f32>()?
-                .into_dimensionality::<Ix4>()?,
-            &prompt,
-        )?;
+    ) -> Result<(BitVec, SamInferenceState)> {
+        match input {
+            InferenceInput::Prompt(prompt) => {
+                let mask_decoder_output = self.inference_image_decoder(
+                    encoded_result.origin_size,
+                    encoded_result.encoder_output["vision_features"]
+                        .try_extract_tensor::<f32>()?
+                        .into_dimensionality::<Ix4>()?,
+                    encoded_result.encoder_output["backbone_fpn_0"]
+                        .try_extract_tensor::<f32>()?
+                        .into_dimensionality::<Ix4>()?,
+                    encoded_result.encoder_output["backbone_fpn_1"]
+                        .try_extract_tensor::<f32>()?
+                        .into_dimensionality::<Ix4>()?,
+                    Some(&prompt),
+                )?;
 
-        let pred_mask = mask_decoder_output["masks"].try_extract_tensor::<f32>()?;
-        let iou_predictions = mask_decoder_output["iou_pred"].try_extract_tensor::<f32>()?;
-        let max_index = iou_predictions
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .unwrap()
-            .0;
+                let pred_mask = mask_decoder_output["masks"].try_extract_tensor::<f32>()?;
+                let iou_predictions =
+                    mask_decoder_output["iou_pred"].try_extract_tensor::<f32>()?;
+                let max_index = iou_predictions
+                    .iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                    .unwrap()
+                    .0;
 
-        let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
-        let pred_mask = pred_mask.into_shape_with_order((256, 256))?;
-        let pred_mask = linear_interpolate(pred_mask.into_owned(), (1024, 1024));
+                let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
+                let pred_mask = pred_mask.into_shape_with_order((256, 256))?;
+                let pred_mask = linear_interpolate(pred_mask.into_owned(), (1024, 1024));
 
-        let back = {
-            let mut back = BitVec::with_capacity(pred_mask.len());
-            pred_mask.iter().for_each(|x| {
-                back.push(*x > 0f32);
-            });
-            back
-        };
-        Ok(back)
+                let state = SamInferenceState::new(
+                    &self,
+                    encoded_result,
+                    &mask_decoder_output,
+                    &pred_mask,
+                    prompt,
+                )?;
+
+                let back = {
+                    let mut back = BitVec::with_capacity(pred_mask.len());
+                    pred_mask.iter().for_each(|x| {
+                        back.push(*x > 0f32);
+                    });
+                    back
+                };
+                Ok((back, state))
+            }
+            InferenceInput::State(mut state) => {
+                let mask_decoder_output = self.inference_image_decoder(
+                    encoded_result.origin_size,
+                    state.pix_feat.view(),
+                    encoded_result.encoder_output["backbone_fpn_0"]
+                        .try_extract_tensor::<f32>()?
+                        .into_dimensionality::<Ix4>()?,
+                    encoded_result.encoder_output["backbone_fpn_1"]
+                        .try_extract_tensor::<f32>()?
+                        .into_dimensionality::<Ix4>()?,
+                    None,
+                )?;
+                let pred_mask = mask_decoder_output["masks"].try_extract_tensor::<f32>()?;
+                let iou_predictions =
+                    mask_decoder_output["iou_pred"].try_extract_tensor::<f32>()?;
+                let max_index = iou_predictions
+                    .iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                    .unwrap()
+                    .0;
+
+                let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
+                let pred_mask = pred_mask.into_shape_with_order((256, 256))?;
+                let pred_mask = linear_interpolate(pred_mask.into_owned(), (1024, 1024));
+
+                state.update(
+                    &self,
+                    encoded_result,
+                    &mask_decoder_output,
+                    pred_mask.clone(),
+                )?;
+
+                let back = {
+                    let mut back = BitVec::with_capacity(pred_mask.len());
+                    pred_mask.iter().for_each(|x| {
+                        back.push(*x > 0f32);
+                    });
+                    back
+                };
+                Ok((back, state))
+            }
+        }
     }
 }
 
-impl SAMImageInferenceSession {
+impl SAMVideoInferenceSession {
     fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<SessionOutputs> {
         static MEAN: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
             INFERENCE_SAM
@@ -177,12 +258,12 @@ impl SAMImageInferenceSession {
         feat0: ArrayView4<f32>,
         feat1: ArrayView4<f32>,
 
-        prompt: &SamPrompt<f32>,
+        prompt: Option<&SamPrompt<f32>>,
     ) -> Result<SessionOutputs> {
         let mask_input = Array3::<f32>::zeros((1, 256, 256));
 
         let trans_prompt = match &prompt {
-            SamPrompt::Box(boxes) => {
+            Some(SamPrompt::Box(boxes)) => {
                 array![
                     1024f32 * (boxes.x / image_size.0 as f32),
                     1024f32 * (boxes.y / image_size.1 as f32),
@@ -190,13 +271,13 @@ impl SAMImageInferenceSession {
                     1024f32 * ((boxes.y + boxes.height / 2_f32) / image_size.1 as f32),
                 ]
             }
-            SamPrompt::Point(point) => {
+            Some(SamPrompt::Point(point)) => {
                 array![
                     1024f32 * (point.x / image_size.0 as f32),
                     1024f32 * (point.y / image_size.1 as f32),
                 ]
             }
-            SamPrompt::Both(point, boxes) => {
+            Some(SamPrompt::Both(point, boxes)) => {
                 array![
                     1024f32 * (point.x / image_size.0 as f32),
                     1024f32 * (point.y / image_size.1 as f32),
@@ -206,18 +287,20 @@ impl SAMImageInferenceSession {
                     1024f32 * ((boxes.y + boxes.height / 2_f32) / image_size.1 as f32),
                 ]
             }
+            None => array![0., 0.],
         };
 
         let point_labels = match prompt {
-            SamPrompt::Point(_) => array![[1]],
-            SamPrompt::Box(_) => array![[1, 1]],
-            SamPrompt::Both(_, _) => array![[1, 1, 1]],
+            Some(SamPrompt::Point(_)) => array![[1]],
+            Some(SamPrompt::Box(_)) => array![[1, 1]],
+            Some(SamPrompt::Both(_, _)) => array![[1, 1, 1]],
+            None => array![[-1]],
         };
 
         let prompt_out = match prompt {
-            SamPrompt::Point(_) => trans_prompt.into_shape_with_order((1, 1, 2))?,
-            SamPrompt::Box(_) => trans_prompt.into_shape_with_order((1, 2, 2))?,
-            SamPrompt::Both(_, _) => trans_prompt.into_shape_with_order((1, 3, 2))?,
+            Some(SamPrompt::Point(_)) | None => trans_prompt.into_shape_with_order((1, 1, 2))?,
+            Some(SamPrompt::Box(_)) => trans_prompt.into_shape_with_order((1, 2, 2))?,
+            Some(SamPrompt::Both(_, _)) => trans_prompt.into_shape_with_order((1, 3, 2))?,
         };
 
         let prompt_result = self.prompt_encoder.run(inputs![

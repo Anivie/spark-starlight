@@ -1,7 +1,7 @@
 use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::OnnxSession;
-use crate::inference::{linear_interpolate, sigmoid};
-use crate::INFERENCE_YOLO;
+use crate::utils::tensor::{linear_interpolate, sigmoid};
+use crate::{INFERENCE_YOLO, RUNNING_YOLO_DEVICE};
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
@@ -59,7 +59,7 @@ impl YoloSegmentInference for OnnxSession {
                 let back = TensorRefMut::from_raw(
                     MemoryInfo::new(
                         AllocationDevice::CUDA,
-                        0,
+                        RUNNING_YOLO_DEVICE,
                         AllocatorType::Device,
                         MemoryType::Default,
                     )?,

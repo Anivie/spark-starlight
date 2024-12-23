@@ -5,6 +5,7 @@ use std::path::Path;
 
 pub struct OnnxSession {
     pub(crate) session: Session,
+    pub(crate) executor: ExecutionProvider,
 }
 
 pub enum ExecutionProvider {
@@ -44,6 +45,6 @@ impl OnnxSession {
             }])?
             .commit_from_file(url)?;
 
-        Ok(OnnxSession { session })
+        Ok(OnnxSession { session, executor })
     }
 }

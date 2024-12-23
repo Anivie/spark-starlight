@@ -25,6 +25,7 @@ impl ParseCallbacks for Cat {
 fn main() {
     // Tell cargo to look for shared libraries in the specified directory
     println!("cargo:rustc-link-search=/home/anivie/SDK/ffmpeg/lib");
+    // println!("cargo:rustc-link-search=/root/ffmpeg/lib");
 
     // Tell cargo to tell rustc to link the system ffmpeg
     // shared library.
@@ -42,6 +43,7 @@ fn main() {
         // bindings for.
         .header("./ffi/ffmpeg.h")
         .clang_arg("-I/home/anivie/SDK/ffmpeg/include")
+        // .clang_arg("-I/root/ffmpeg/include")
         .generate_comments(false)
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.

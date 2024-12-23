@@ -63,7 +63,7 @@ impl YoloDetectInference for YoloDetectSession {
                 let back = TensorRefMut::from_raw(
                     MemoryInfo::new(
                         AllocationDevice::CUDA,
-                        0,
+                        RUNNING_YOLO_DEVICE,
                         AllocatorType::Device,
                         MemoryType::Default,
                     )?,
