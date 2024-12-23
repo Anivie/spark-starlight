@@ -11,6 +11,6 @@ convert_case = "0.6.0"
 [dependencies]
 spark-proc_macro = { path = "../spark-proc_macro" }
 
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 num_enum = "0.7.3"
 rayon = "1.10.0"

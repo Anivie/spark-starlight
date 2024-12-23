@@ -11,4 +11,4 @@ mimalloc = "0.1.43"
 
 bitvec = "1.0.1"
 
-anyhow = "1.0.94"
+anyhow = "1.0.95"
