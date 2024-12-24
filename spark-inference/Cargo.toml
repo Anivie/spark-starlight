@@ -16,6 +16,7 @@ cudarc = { version = "0.12.2", features = ["cuda-version-from-build-system", "cu
 
 spark-ffmpeg = { path = "../spark-ffmpeg" }
 spark-media = { path = "../spark-media" }
+ndarray-npy = "0.9.1"
 
 [dependencies.ndarray]
 version = "0.16.1"

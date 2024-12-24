@@ -65,24 +65,31 @@ impl SamInferenceState {
         )?;*/
         let masks = sigmoid(pred_mask);
         let masks = masks.to_shape((1, 1, 1024, 1024))?;
-        let pix_feat =
-            encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
-        let mem_encode_result = instance.memory_encoder.run(inputs![
-            "pix_feat" => TensorRef::from_array_view(pix_feat)?,
-            "masks" => TensorRef::from_array_view(masks.view())?,
-        ])?;
+
+        let mem_encode_result = {
+            let pix_feat =
+                encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
+            let mem_encode_result = instance.memory_encoder.run(inputs![
+                "pix_feat" => TensorRef::from_array_view(pix_feat)?,
+                "masks" => TensorRef::from_array_view(masks.view())?,
+            ])?;
+            mem_encode_result
+        };
+
         let (vision_features, vision_pos_enc) = (
             mem_encode_result["vision_features"].try_extract_tensor::<f32>()?,
             mem_encode_result["vision_pos_enc"].try_extract_tensor::<f32>()?,
         );
 
-        let memory = vision_features.into_shape_with_order((1, 64, 4096))?;
-        let memory1 = memory.permuted_axes([2, 0, 1]);
-        let mut memory1 = if memory1.shape()[0] > self.max_len * 4096 {
-            let memory1 = self.memory1.slice(s![4096.., .., ..]).to_owned();
-            concatenate![Axis(0), self.memory1, memory1]
-        } else {
-            concatenate![Axis(0), self.memory1, memory1]
+        let memory1 = {
+            let memory = vision_features.into_shape_with_order((1, 64, 4096))?;
+            let memory1 = memory.permuted_axes([2, 0, 1]);
+            if memory1.shape()[0] > self.max_len * 4096 {
+                let memory1 = self.memory1.slice(s![4096.., .., ..]).to_owned();
+                concatenate![Axis(0), self.memory1, memory1]
+            } else {
+                concatenate![Axis(0), self.memory1, memory1]
+            }
         };
 
         let obj_ptr = {
@@ -174,7 +181,7 @@ impl SamInferenceState {
         instance: &SAMVideoInferenceSession,
         encoded_result: &SamEncoderOutput,
         mask_decoder_output: &SessionOutputs,
-        pred_mask: &Array2<f32>,
+        pred_mask: Array2<f32>,
         prompt: SamPrompt<f32>,
     ) -> Result<Self> {
         let curr = encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
@@ -186,22 +193,29 @@ impl SamInferenceState {
         let curr_pos = curr_pos.into_shape_with_order((1, 256, 4096))?;
         let curr_pos = curr_pos.permuted_axes([2, 0, 1]);
 
-        let masks = sigmoid(pred_mask.clone());
+        let masks = sigmoid(pred_mask);
         let masks = masks.to_shape((1, 1, 1024, 1024))?;
-        let pix_feat =
-            encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
-        let mem_encode_result = instance.memory_encoder.run(inputs![
-            "pix_feat" => TensorRef::from_array_view(pix_feat)?,
-            "masks" => TensorRef::from_array_view(masks.view())?,
-        ])?;
+
+        let mem_encode_result = {
+            let pix_feat =
+                encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
+            let mem_encode_result = instance.memory_encoder.run(inputs![
+                "pix_feat" => TensorRef::from_array_view(pix_feat)?,
+                "masks" => TensorRef::from_array_view(masks.view())?,
+            ])?;
+            mem_encode_result
+        };
+
         let (vision_features, vision_pos_enc) = (
             mem_encode_result["vision_features"].try_extract_tensor::<f32>()?,
             mem_encode_result["vision_pos_enc"].try_extract_tensor::<f32>()?,
         );
 
-        let memory = vision_features.into_shape_with_order((1, 64, 4096))?;
-        let memory1 = memory.permuted_axes([2, 0, 1]);
-        let memory1 = memory1.to_owned();
+        let memory1 = {
+            let memory = vision_features.into_shape_with_order((1, 64, 4096))?;
+            let memory1 = memory.permuted_axes([2, 0, 1]);
+            memory1.to_owned()
+        };
 
         let obj_ptr = {
             let sam_out = mask_decoder_output["sam_tokens_out"].try_extract_tensor::<f32>()?;

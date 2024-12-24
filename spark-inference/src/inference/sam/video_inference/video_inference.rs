@@ -139,7 +139,7 @@ impl SamVideoInference for SAMVideoInferenceSession {
                     &self,
                     encoded_result,
                     &mask_decoder_output,
-                    &pred_mask,
+                    pred_mask.clone(),
                     prompt,
                 )?;
 
