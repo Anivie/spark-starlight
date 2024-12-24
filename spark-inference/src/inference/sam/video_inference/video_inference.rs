@@ -312,7 +312,7 @@ impl SAMVideoInferenceSession {
         ])?;
 
         let result = self.mask_decoder.run(inputs![
-            "image_embeddings" => TensorRef::from_array_view(feats)?,
+            "image_embeddings" => Tensor::from_array(feats.to_owned())?,
             "high_res_features1" => TensorRef::from_array_view(feat0)?,
             "high_res_features2" => TensorRef::from_array_view(feat1)?,
 

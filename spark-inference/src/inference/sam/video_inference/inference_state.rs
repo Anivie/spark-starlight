@@ -125,11 +125,11 @@ impl SamInferenceState {
         )?;
 
         let attention_results = instance.memory_attention.run(inputs![
-            "curr" => TensorRef::from_array_view(curr)?,
-            "memory_1" => TensorRef::from_array_view(memory1.view())?,
+            "curr" => Tensor::from_array(curr.to_owned())?,
+            "memory_1" => Tensor::from_array(memory1.clone())?,
             "memory_2" => TensorRef::from_array_view(memory2.view())?,
-            "curr_pos" => TensorRef::from_array_view(curr_pos)?,
-            "memory_pos_1" => TensorRef::from_array_view(memory_pos1.view())?,
+            "curr_pos" => Tensor::from_array(curr_pos.to_owned())?,
+            "memory_pos_1" => Tensor::from_array(memory_pos1.clone())?,
             "memory_pos_2" => TensorRef::from_array_view(memory_pos2.view())?,
             "attention_mask_1" => Tensor::from_array(attention_mask1)?,
             "attention_mask_2" => Tensor::from_array(attention_mask2)?,
@@ -138,6 +138,8 @@ impl SamInferenceState {
         let pix_feat = attention_results["pix_feat"].try_extract_tensor::<f32>()?;
         let pix_feat = pix_feat.into_shape_with_order((4096, 1, 256))?;
         let pix_feat = pix_feat.permuted_axes([1, 2, 0]);
+        let pix_feat = pix_feat.to_shape((1, 256, 64, 64))?;
+
         self.pix_feat = pix_feat.to_shape((1, 256, 64, 64))?.to_owned();
         self.memory1 = memory1.to_owned();
         self.memory2 = memory2.to_owned();
@@ -178,6 +180,8 @@ impl SamInferenceState {
 
         let memory = vision_features.into_shape_with_order((1, 64, 4096))?;
         let memory1 = memory.permuted_axes([2, 0, 1]);
+        let memory1 = memory1.to_owned();
+
         let obj_ptr = {
             let sam_out = mask_decoder_output["sam_tokens_out"].try_extract_tensor::<f32>()?;
             let sam_out = sam_out.into_shape_with_order((4, 256))?;
@@ -194,6 +198,7 @@ impl SamInferenceState {
 
         let memory_pos = vision_pos_enc.into_shape_with_order((1, 64, 4096))?;
         let memory_pos1 = memory_pos.permuted_axes([2, 0, 1]);
+        let memory_pos1 = memory_pos1.to_owned();
 
         let obj_pos = get_1d_sine_pe(array![1.], 256, 10000.0)?;
         let memory_pos2 = {
@@ -230,11 +235,11 @@ impl SamInferenceState {
         );*/
 
         let attention_results = instance.memory_attention.run(inputs![
-            "curr" => TensorRef::from_array_view(curr)?,
-            "memory_1" => TensorRef::from_array_view(memory1.view())?,
+            "curr" => Tensor::from_array(curr.to_owned())?,
+            "memory_1" => Tensor::from_array(memory1.clone())?,
             "memory_2" => TensorRef::from_array_view(memory2.view())?,
-            "curr_pos" => TensorRef::from_array_view(curr_pos)?,
-            "memory_pos_1" => TensorRef::from_array_view(memory_pos1.view())?,
+            "curr_pos" => Tensor::from_array(curr_pos.to_owned())?,
+            "memory_pos_1" => Tensor::from_array(memory_pos1.clone())?,
             "memory_pos_2" => TensorRef::from_array_view(memory_pos2.view())?,
             "attention_mask_1" => Tensor::from_array(attention_mask1)?,
             "attention_mask_2" => Tensor::from_array(attention_mask2)?,
@@ -247,9 +252,9 @@ impl SamInferenceState {
 
         Ok(SamInferenceState {
             pix_feat: pix_feat.to_owned(),
-            memory1: memory1.to_owned(),
+            memory1,
             memory2: memory2.to_owned(),
-            memory_pos1: memory_pos1.to_owned(),
+            memory_pos1,
             memory_pos2: memory_pos2.to_owned(),
             prompt,
         })
