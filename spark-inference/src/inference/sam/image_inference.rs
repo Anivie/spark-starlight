@@ -10,7 +10,7 @@ use ndarray::prelude::*;
 use ort::inputs;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::session::{SessionInputValue, SessionOutputs};
-use ort::value::TensorRefMut;
+use ort::value::{Tensor, TensorRef, TensorRefMut};
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
 use std::ops::Deref;
@@ -148,7 +148,8 @@ impl SAMImageInferenceSession {
             ExecutionProvider::CPU => {
                 let tensor = INFERENCE_SAM.dtoh_sync_copy(&tensor)?;
                 let tensor = Array4::from_shape_vec((1, 3, 1024, 1024), tensor)?;
-                self.image_encoder.run(inputs!["input_image" => tensor]?)?
+                self.image_encoder
+                    .run(inputs![Tensor::from_array(tensor)?])?
             }
             _ => unsafe {
                 let tensor: TensorRefMut<'_, f32> = TensorRefMut::from_raw(
@@ -221,21 +222,21 @@ impl SAMImageInferenceSession {
         };
 
         let prompt_result = self.prompt_encoder.run(inputs![
-            "coords" => prompt_out,
-            "labels" => point_labels,
-            "masks" => mask_input,
-            "masks_enable" => array![0],
-        ]?)?;
+            "coords" => Tensor::from_array(prompt_out)?,
+            "labels" => Tensor::from_array(point_labels)?,
+            "masks" => Tensor::from_array(mask_input)?,
+            "masks_enable" => Tensor::from_array(array![0])?,
+        ])?;
 
         let result = self.mask_decoder.run(inputs![
-            "image_embeddings" => feats,
-            "high_res_features1" => feat0,
-            "high_res_features2" => feat1,
+            "image_embeddings" => TensorRef::from_array_view(feats)?,
+            "high_res_features1" => TensorRef::from_array_view(feat0)?,
+            "high_res_features2" => TensorRef::from_array_view(feat1)?,
 
-            "image_pe" => prompt_result["dense_pe"].try_extract_tensor::<f32>()?,
-            "sparse_prompt_embeddings" => prompt_result["sparse_embeddings"].try_extract_tensor::<f32>()?,
-            "dense_prompt_embeddings" => prompt_result["dense_embeddings"].try_extract_tensor::<f32>()?,
-        ]?)?;
+            "image_pe" => TensorRef::from_array_view(prompt_result["dense_pe"].try_extract_tensor::<f32>()?)?,
+            "sparse_prompt_embeddings" => TensorRef::from_array_view(prompt_result["sparse_embeddings"].try_extract_tensor::<f32>()?)?,
+            "dense_prompt_embeddings" => TensorRef::from_array_view(prompt_result["dense_embeddings"].try_extract_tensor::<f32>()?)?,
+        ])?;
 
         Ok(result)
     }

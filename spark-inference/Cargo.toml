@@ -12,9 +12,7 @@ num = "0.4.3"
 
 anyhow = "1.0.95"
 
-#openblas-src = { version = "0.10", features = ["cblas", "system"] }
-
-cudarc = { version = "0.12.2", features = ["cuda-12050", "cudnn"] }
+cudarc = { version = "0.12.2", features = ["cuda-version-from-build-system", "cudnn"] }
 
 spark-ffmpeg = { path = "../spark-ffmpeg" }
 spark-media = { path = "../spark-media" }

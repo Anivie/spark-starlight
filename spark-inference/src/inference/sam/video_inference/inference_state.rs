@@ -8,6 +8,7 @@ use ndarray::concatenate;
 use ndarray::prelude::*;
 use ort::inputs;
 use ort::session::SessionOutputs;
+use ort::value::{Tensor, TensorRef};
 
 pub enum InferenceType {
     First(SamPrompt<f32>),
@@ -63,10 +64,12 @@ impl SamInferenceState {
         )?;*/
         let masks = sigmoid(pred_mask);
         let masks = masks.to_shape((1, 1, 1024, 1024))?;
+        let pix_feat =
+            encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
         let mem_encode_result = instance.memory_encoder.run(inputs![
-            "pix_feat" => encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?,
-            "masks" => masks.view(),
-        ]?)?;
+            "pix_feat" => TensorRef::from_array_view(pix_feat)?,
+            "masks" => TensorRef::from_array_view(masks.view())?,
+        ])?;
         let (vision_features, vision_pos_enc) = (
             mem_encode_result["vision_features"].try_extract_tensor::<f32>()?,
             mem_encode_result["vision_pos_enc"].try_extract_tensor::<f32>()?,
@@ -81,9 +84,9 @@ impl SamInferenceState {
             let sam_out = sam_out.into_shape_with_order((4, 256))?;
             let sam_out = sam_out.slice(s![1, ..]);
             let sam_out = sam_out.into_shape_with_order((1, 256))?;
-            instance.mlp.run(inputs![
-                "x" => sam_out,
-            ]?)?
+            instance
+                .mlp
+                .run(inputs![TensorRef::from_array_view(sam_out)?])?
         };
         let obj_ptr = obj_ptr["x_out"].try_extract_tensor::<f32>()?;
         let memory2 = obj_ptr.view();
@@ -99,9 +102,9 @@ impl SamInferenceState {
         let memory_pos2 = {
             let memory_pos2 = {
                 let back = obj_pos.view();
-                instance.obj_ptr_tpos_proj.run(inputs![
-                    "x" => back,
-                ]?)?
+                instance
+                    .obj_ptr_tpos_proj
+                    .run(inputs![TensorRef::from_array_view(back)?])?
             };
             let memory_pos2 = memory_pos2["x_out"].try_extract_tensor::<f32>()?;
             let memory_pos2 = memory_pos2.into_shape_with_order((1, 1, 64))?;
@@ -122,15 +125,15 @@ impl SamInferenceState {
         )?;
 
         let attention_results = instance.memory_attention.run(inputs![
-            "curr" => curr,
-            "memory_1" => memory1.view(),
-            "memory_2" => memory2.view(),
-            "curr_pos" => curr_pos,
-            "memory_pos_1" => memory_pos1.view(),
-            "memory_pos_2" => memory_pos2.view(),
-            "attention_mask_1" => attention_mask1,
-            "attention_mask_2" => attention_mask2,
-        ]?)?;
+            "curr" => TensorRef::from_array_view(curr)?,
+            "memory_1" => TensorRef::from_array_view(memory1.view())?,
+            "memory_2" => TensorRef::from_array_view(memory2.view())?,
+            "curr_pos" => TensorRef::from_array_view(curr_pos)?,
+            "memory_pos_1" => TensorRef::from_array_view(memory_pos1.view())?,
+            "memory_pos_2" => TensorRef::from_array_view(memory_pos2.view())?,
+            "attention_mask_1" => Tensor::from_array(attention_mask1)?,
+            "attention_mask_2" => Tensor::from_array(attention_mask2)?,
+        ])?;
 
         let pix_feat = attention_results["pix_feat"].try_extract_tensor::<f32>()?;
         let pix_feat = pix_feat.into_shape_with_order((4096, 1, 256))?;
@@ -162,10 +165,12 @@ impl SamInferenceState {
 
         let masks = sigmoid(pred_mask.clone());
         let masks = masks.to_shape((1, 1, 1024, 1024))?;
+        let pix_feat =
+            encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
         let mem_encode_result = instance.memory_encoder.run(inputs![
-            "pix_feat" => encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?,
-            "masks" => masks.view(),
-        ]?)?;
+            "pix_feat" => TensorRef::from_array_view(pix_feat)?,
+            "masks" => TensorRef::from_array_view(masks.view())?,
+        ])?;
         let (vision_features, vision_pos_enc) = (
             mem_encode_result["vision_features"].try_extract_tensor::<f32>()?,
             mem_encode_result["vision_pos_enc"].try_extract_tensor::<f32>()?,
@@ -178,9 +183,9 @@ impl SamInferenceState {
             let sam_out = sam_out.into_shape_with_order((4, 256))?;
             let sam_out = sam_out.slice(s![1, ..]);
             let sam_out = sam_out.into_shape_with_order((1, 256))?;
-            instance.mlp.run(inputs![
-                "x" => sam_out,
-            ]?)?
+            instance
+                .mlp
+                .run(inputs![TensorRef::from_array_view(sam_out)?])?
         };
         let obj_ptr = obj_ptr["x_out"].try_extract_tensor::<f32>()?;
         let memory2 = obj_ptr.view();
@@ -194,9 +199,9 @@ impl SamInferenceState {
         let memory_pos2 = {
             let memory_pos2 = {
                 let back = obj_pos.view();
-                instance.obj_ptr_tpos_proj.run(inputs![
-                    "x" => back,
-                ]?)?
+                instance
+                    .obj_ptr_tpos_proj
+                    .run(inputs![TensorRef::from_array_view(back)?])?
             };
             let memory_pos2 = memory_pos2["x_out"].try_extract_tensor::<f32>()?;
             let memory_pos2 = memory_pos2.into_shape_with_order((1, 1, 64))?;
@@ -225,15 +230,15 @@ impl SamInferenceState {
         );*/
 
         let attention_results = instance.memory_attention.run(inputs![
-            "curr" => curr,
-            "memory_1" => memory1.view(),
-            "memory_2" => memory2.view(),
-            "curr_pos" => curr_pos,
-            "memory_pos_1" => memory_pos1.view(),
-            "memory_pos_2" => memory_pos2.view(),
-            "attention_mask_1" => attention_mask1,
-            "attention_mask_2" => attention_mask2,
-        ]?)?;
+            "curr" => TensorRef::from_array_view(curr)?,
+            "memory_1" => TensorRef::from_array_view(memory1.view())?,
+            "memory_2" => TensorRef::from_array_view(memory2.view())?,
+            "curr_pos" => TensorRef::from_array_view(curr_pos)?,
+            "memory_pos_1" => TensorRef::from_array_view(memory_pos1.view())?,
+            "memory_pos_2" => TensorRef::from_array_view(memory_pos2.view())?,
+            "attention_mask_1" => Tensor::from_array(attention_mask1)?,
+            "attention_mask_2" => Tensor::from_array(attention_mask2)?,
+        ])?;
 
         let pix_feat = attention_results["pix_feat"].try_extract_tensor::<f32>()?;
         let pix_feat = pix_feat.into_shape_with_order((4096, 1, 256))?;
