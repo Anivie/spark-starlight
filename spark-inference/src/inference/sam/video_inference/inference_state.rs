@@ -39,6 +39,7 @@ pub struct SamInferenceState {
     pub(super) memory_pos2: Array3<f32>,
 
     pub(super) prompt: SamPrompt<f32>,
+    pub(super) max_len: usize,
 }
 
 impl SamInferenceState {
@@ -77,7 +78,12 @@ impl SamInferenceState {
 
         let memory = vision_features.into_shape_with_order((1, 64, 4096))?;
         let memory1 = memory.permuted_axes([2, 0, 1]);
-        let memory1 = concatenate![Axis(0), self.memory1, memory1];
+        let mut memory1 = if memory1.shape()[0] > self.max_len * 4096 {
+            let memory1 = self.memory1.slice(s![4096.., .., ..]).to_owned();
+            concatenate![Axis(0), self.memory1, memory1]
+        } else {
+            concatenate![Axis(0), self.memory1, memory1]
+        };
 
         let obj_ptr = {
             let sam_out = mask_decoder_output["sam_tokens_out"].try_extract_tensor::<f32>()?;
@@ -92,11 +98,21 @@ impl SamInferenceState {
         let memory2 = obj_ptr.view();
         let memory2 = memory2.into_shape_with_order((1, 4, 64))?;
         let memory2 = memory2.permuted_axes([1, 0, 2]);
-        let memory2 = concatenate![Axis(0), self.memory2, memory2];
+        let mut memory2 = if memory2.shape()[0] > self.max_len * 4 {
+            let memory2 = self.memory2.slice(s![4.., .., ..]).to_owned();
+            concatenate![Axis(0), self.memory2, memory2]
+        } else {
+            concatenate![Axis(0), self.memory2, memory2]
+        };
 
         let memory_pos = vision_pos_enc.into_shape_with_order((1, 64, 4096))?;
         let memory_pos1 = memory_pos.permuted_axes([2, 0, 1]);
-        let memory_pos1 = concatenate![Axis(0), self.memory_pos1, memory_pos1];
+        let mut memory_pos1 = if memory_pos1.shape()[0] > self.max_len * 4096 {
+            let memory_pos1 = self.memory_pos1.slice(s![4096.., .., ..]).to_owned();
+            concatenate![Axis(0), self.memory_pos1, memory_pos1]
+        } else {
+            concatenate![Axis(0), self.memory_pos1, memory_pos1]
+        };
 
         let obj_pos = get_1d_sine_pe(array![1.], 256, 10000.0)?;
         let memory_pos2 = {
@@ -113,7 +129,12 @@ impl SamInferenceState {
             let new_memory_pos2 = concatenate![Axis(0), new_memory_pos2, memory_pos2];
             new_memory_pos2
         };
-        let memory_pos2 = concatenate![Axis(0), self.memory_pos2, memory_pos2];
+        let mut memory_pos2 = if memory_pos2.shape()[0] > self.max_len * 4 {
+            let memory_pos2 = self.memory_pos2.slice(s![4.., .., ..]).to_owned();
+            concatenate![Axis(0), self.memory_pos2, memory_pos2]
+        } else {
+            concatenate![Axis(0), self.memory_pos2, memory_pos2]
+        };
 
         let attention_mask1 = Array::<bool, _>::from_shape_vec(
             (memory1.shape()[0], memory1.shape()[1]),
@@ -225,15 +246,6 @@ impl SamInferenceState {
             vec![true; memory2.shape()[0] * memory2.shape()[1]],
         )?;
 
-        /*println!(
-            "shape of curr: {:?}, memory1: {:?}, memory2: {:?},\n\
-            curr_pos: {:?}, memory_pos_1: {:?}, memory_pos_2: {:?},\
-            attention_mask_1: {:?}, attention_mask_2: {:?}",
-            curr.shape(), memory1.shape(), memory2.shape(),
-            curr_pos.shape(), memory_pos1.shape(), memory_pos2.shape(),
-            attention_mask1.shape(), attention_mask2.shape()
-        );*/
-
         let attention_results = instance.memory_attention.run(inputs![
             "curr" => Tensor::from_array(curr.to_owned())?,
             "memory_1" => Tensor::from_array(memory1.clone())?,
@@ -257,6 +269,7 @@ impl SamInferenceState {
             memory_pos1,
             memory_pos2: memory_pos2.to_owned(),
             prompt,
+            max_len: 8,
         })
     }
 }
