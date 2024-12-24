@@ -33,7 +33,7 @@ fn main() -> Result<()> {
         .add_context("format", "rgb24")?
         .build()?;
     image.apply_filter(&filter)?;
-    image.layering_mask(&mask, RGB(0, 125, 60))?;
+    image.layering_mask(&mask, RGB(0, 65, 45))?;
     image.save("./data/out/bird1_mask.png")?;
 
     let path = "./data/image/bed2.png";
@@ -47,7 +47,7 @@ fn main() -> Result<()> {
         .add_context("format", "rgb24")?
         .build()?;
     image.apply_filter(&filter)?;
-    image.layering_mask(&mask, RGB(255, 0, 0))?;
+    image.layering_mask(&mask, RGB(64, 0, 0))?;
     image.save("./data/out/bird2_mask.png")?;
 
     let path = "./data/image/bed3.png";
@@ -61,7 +61,7 @@ fn main() -> Result<()> {
         .add_context("format", "rgb24")?
         .build()?;
     image.apply_filter(&filter)?;
-    image.layering_mask(&mask, RGB(255, 0, 0))?;
+    image.layering_mask(&mask, RGB(64, 0, 0))?;
     image.save("./data/out/bird3_mask.png")?;
 
     Ok(())

@@ -6,9 +6,11 @@ use anyhow::Result;
 use bitvec::vec::BitVec;
 use ndarray::concatenate;
 use ndarray::prelude::*;
+use ndarray_npy::ReadNpyExt;
 use ort::inputs;
 use ort::session::SessionOutputs;
 use ort::value::{Tensor, TensorRef};
+use std::fs::File;
 
 pub enum InferenceType {
     First(SamPrompt<f32>),
@@ -59,10 +61,6 @@ impl SamInferenceState {
         let curr_pos = curr_pos.into_shape_with_order((1, 256, 4096))?;
         let curr_pos = curr_pos.permuted_axes([2, 0, 1]);
 
-        /*let masks = Array2::<f32>::from_shape_vec(
-            (pred_mask.shape()[0], pred_mask.shape()[1]),
-            pred_mask.iter().map(|x| if *x > 0.0 { 1.0 }else { 0.0 }).collect::<Vec<_>>()
-        )?;*/
         let masks = sigmoid(pred_mask);
         let masks = masks.to_shape((1, 1, 1024, 1024))?;
 
@@ -184,7 +182,8 @@ impl SamInferenceState {
         pred_mask: Array2<f32>,
         prompt: SamPrompt<f32>,
     ) -> Result<Self> {
-        let curr = encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
+        let curr = Array4::<f32>::read_npy(File::open("./data/other/b2.npy")?)?;
+        // let curr = encoded_result.encoder_output["backbone_fpn_2"].try_extract_tensor::<f32>()?;
         let curr = curr.into_shape_with_order((1, 256, 4096))?;
         let curr = curr.permuted_axes([2, 0, 1]);
 
@@ -260,6 +259,14 @@ impl SamInferenceState {
             vec![true; memory2.shape()[0] * memory2.shape()[1]],
         )?;
 
+        // let curr = Array3::<f32>::read_npy(File::open("./data/other/curr.npy")?)?;
+        // let curr_pos = Array3::<f32>::read_npy(File::open("./data/other/curr_pos.npy")?)?;
+        // let memory1 = Array3::<f32>::read_npy(File::open("./data/other/memory1.npy")?)?;
+        // let memory2 = Array3::<f32>::read_npy(File::open("./data/other/memory2.npy")?)?;
+        // let memory_pos1 = Array3::<f32>::read_npy(File::open("./data/other/mp1.npy")?)?;
+        // let memory_pos2 = Array3::<f32>::read_npy(File::open("./data/other/mp2.npy")?)?;
+        // let attention_mask1 = Array2::<bool>::read_npy(File::open("./data/other/a1.npy")?)?;
+        // let attention_mask2 = Array2::<bool>::read_npy(File::open("./data/other/a2.npy")?)?;
         let attention_results = instance.memory_attention.run(inputs![
             "curr" => Tensor::from_array(curr.to_owned())?,
             "memory_1" => Tensor::from_array(memory1.clone())?,
