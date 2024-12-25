@@ -14,8 +14,9 @@ use spark_inference::inference::yolo::inference_yolo_detect::{
 };
 use spark_inference::inference::yolo::NMSImplement;
 use spark_inference::utils::graph::SamPrompt;
+use spark_inference::utils::masks::ApplyMask;
 use spark_media::filter::filter::AVFilter;
-use spark_media::Image;
+use spark_media::{Image, RGB};
 
 fn main() -> Result<()> {
     disable_ffmpeg_logging();
@@ -23,7 +24,7 @@ fn main() -> Result<()> {
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAMImageInferenceSession::new("./data/model/other3")?;
 
-    let path = "./data/image/rd.jpg";
+    let path = "./data/image/c.jpg";
     let image = Image::open_file(path)?;
 
     let results = yolo.inference_yolo(image, 0.25)?;
@@ -32,11 +33,11 @@ fn main() -> Result<()> {
     let result_highway = results
         .clone()
         .into_iter()
-        .filter(|result| result.score[0] >= 0.25)
+        .filter(|result| result.score[0] >= 0.8)
         .collect::<Vec<_>>();
     let result_sidewalk = results
         .into_iter()
-        .filter(|result| result.score[1] >= 0.25)
+        .filter(|result| result.score[1] >= 0.4)
         .collect::<Vec<_>>();
     let result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
     let result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
@@ -47,26 +48,28 @@ fn main() -> Result<()> {
     let result = sam2.encode_image(image)?;
 
     let mut image = Image::open_file(path)?;
+    let (image_w, image_h) = image.get_size();
     let mut filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+        .add_context("scale", "1024:1024")?
         .add_context("format", "rgb24")?;
 
     for mask in result_highway.iter() {
         let string1 = format!(
             "x=({x}-{width}/2):y=({y}-{height}/2):w={width}:h={height}:color=red@1.0:t=6",
-            x = mask.x,
-            y = mask.y,
-            width = mask.width,
-            height = mask.height,
+            x = mask.x / image_w as f32 * 1024.0,
+            y = mask.y / image_h as f32 * 1024.0,
+            width = mask.width / image_w as f32 * 1024.0,
+            height = mask.height / image_h as f32 * 1024.0,
         );
         filter = filter.add_context("drawbox", string1.as_str())?
     }
     for x in result_sidewalk.iter() {
         let string = format!(
             "x=({x}-{width}/2):y=({y}-{height}/2):w={width}:h={height}:color=blue@1.0:t=6",
-            x = x.x,
-            y = x.y,
-            width = x.width,
-            height = x.height,
+            x = x.x / image_w as f32 * 1024.0,
+            y = x.y / image_h as f32 * 1024.0,
+            width = x.width / image_w as f32 * 1024.0,
+            height = x.height / image_h as f32 * 1024.0,
         );
         filter = filter.add_context("drawbox", string.as_str())?
     }
@@ -74,16 +77,16 @@ fn main() -> Result<()> {
 
     let highway_mask = result_highway
         .into_iter()
-        .map(|x| {
+        .map(|yolo| {
             sam2.inference_frame(
                 SamPrompt::both(
                     (
-                        x.x - x.width / 2.0,
-                        x.y - x.height / 2.0,
-                        x.x + x.width / 2.0,
-                        x.y + x.height / 2.0,
+                        yolo.x - yolo.width / 2.0,
+                        yolo.y - yolo.height / 2.0,
+                        yolo.x + yolo.width / 2.0,
+                        yolo.y + yolo.height / 2.0,
                     ),
-                    (x.width, x.height),
+                    (yolo.x, yolo.y),
                 ),
                 &result,
             )
@@ -92,16 +95,16 @@ fn main() -> Result<()> {
 
     let sidewalk_mask = result_sidewalk
         .into_iter()
-        .map(|x| {
+        .map(|yolo| {
             sam2.inference_frame(
                 SamPrompt::both(
                     (
-                        x.x - x.width / 2.0,
-                        x.y - x.height / 2.0,
-                        x.x + x.width / 2.0,
-                        x.y + x.height / 2.0,
+                        yolo.x - yolo.width / 2.0,
+                        yolo.y - yolo.height / 2.0,
+                        yolo.x + yolo.width / 2.0,
+                        yolo.y + yolo.height / 2.0,
                     ),
-                    (x.width, x.height),
+                    (yolo.x, yolo.y),
                 ),
                 &result,
             )
@@ -109,10 +112,14 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>();
 
     for x in highway_mask {
-        // image.layering_mask(&x?, RGB(0, 75, 0))?;
+        if let Ok(mask) = x {
+            image.layering_mask(&mask, RGB(0, 75, 0))?;
+        }
     }
     for x in sidewalk_mask {
-        // image.layering_mask(&x?, RGB(75, 0, 0))?;
+        if let Ok(mask) = x {
+            image.layering_mask(&mask, RGB(0, 75, 0))?;
+        }
     }
     image.save_with_format("./data/out/a_out.png")?;
 
