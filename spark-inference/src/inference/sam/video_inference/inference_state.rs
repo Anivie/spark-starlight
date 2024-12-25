@@ -119,19 +119,31 @@ impl SamInferenceState {
             concatenate![Axis(0), self.memory_pos1, memory_pos1]
         };
 
-        let obj_pos = get_1d_sine_pe(array![1.], 256, 10000.0)?;
+        let obj_pos = get_1d_sine_pe(
+            Array1::range(0.0, (self.memory_pos2.shape()[0] / 4) as f32 / 4.0, 1.0),
+            256,
+            10000.0,
+        )?;
         let memory_pos2 = {
             let memory_pos2 = {
-                let back = obj_pos.view();
                 instance
                     .obj_ptr_tpos_proj
-                    .run(inputs![TensorRef::from_array_view(back)?])?
+                    .run(inputs![Tensor::from_array(obj_pos)?])?
             };
             let memory_pos2 = memory_pos2["x_out"].try_extract_tensor::<f32>()?;
-            let memory_pos2 = memory_pos2.into_shape_with_order((1, 1, 64))?;
-            let new_memory_pos2 = concatenate![Axis(0), memory_pos2, memory_pos2];
-            let new_memory_pos2 = concatenate![Axis(0), new_memory_pos2, memory_pos2];
-            let new_memory_pos2 = concatenate![Axis(0), new_memory_pos2, memory_pos2];
+            let dim0 = memory_pos2.shape()[0];
+            let memory_pos2 = memory_pos2.into_shape_with_order((dim0, 1, 64))?;
+            let mut new_memory_pos2 = memory_pos2.to_owned();
+            if dim0 < 4 {
+                for _ in 0..(4 - dim0) {
+                    new_memory_pos2 = concatenate![
+                        Axis(0),
+                        new_memory_pos2,
+                        memory_pos2.slice(s![-1.., .., ..])
+                    ];
+                }
+            }
+
             new_memory_pos2
         };
         let mut memory_pos2 = if memory_pos2.shape()[0] > self.max_len * 4 {
