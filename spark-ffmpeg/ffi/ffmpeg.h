@@ -9,3 +9,4 @@
 
 #include "libavutil/avutil.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/log.h"

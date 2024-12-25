@@ -26,3 +26,9 @@ pub trait DeepClone {
 pub trait CloneFrom<T> {
     fn clone_fields_from(&mut self, other: &T);
 }
+
+pub fn disable_ffmpeg_logging() {
+    unsafe {
+        ffi::av_log_set_level(ffi::AV_LOG_QUIET);
+    }
+}

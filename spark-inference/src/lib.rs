@@ -17,3 +17,5 @@ pub(crate) static INFERENCE_SAM: LazyLock<Cuda> =
     LazyLock::new(|| Cuda::new(RUNNING_SAM_DEVICE as usize).unwrap());
 pub(crate) static INFERENCE_YOLO: LazyLock<Cuda> =
     LazyLock::new(|| Cuda::new(RUNNING_YOLO_DEVICE as usize).unwrap());
+
+pub use spark_ffmpeg::disable_ffmpeg_logging;

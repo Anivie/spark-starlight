@@ -5,6 +5,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use anyhow::Result;
+use spark_inference::disable_ffmpeg_logging;
 use spark_inference::inference::sam::video_inference::video_inference::{
     SAMVideoInferenceSession, SamVideoInference,
 };
@@ -15,6 +16,7 @@ use spark_media::filter::filter::AVFilter;
 use spark_media::{Image, RGB};
 
 fn main() -> Result<()> {
+    disable_ffmpeg_logging();
     let path = "./data/image/bed1.png";
 
     let sam2 = SAMVideoInferenceSession::new("./data/model/other3")?;

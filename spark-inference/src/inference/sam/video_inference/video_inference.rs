@@ -10,7 +10,7 @@ use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
 use ndarray::prelude::*;
 use ort::inputs;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
-use ort::session::{SessionInputValue, SessionOutputs};
+use ort::session::SessionOutputs;
 use ort::value::{Tensor, TensorRef, TensorRefMut};
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
@@ -42,7 +42,7 @@ impl SAMVideoInferenceSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
         let image_encoder = OnnxSession::new(
             folder_path.as_ref().join("image_encoder.onnx"),
-            ExecutionProvider::CPU,
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let mask_decoder = OnnxSession::new(
             folder_path.as_ref().join("mask_decoder.onnx"),
@@ -109,7 +109,7 @@ impl SamVideoInference for SAMVideoInferenceSession {
             InferenceInput::Prompt(prompt) => {
                 let mask_decoder_output = self.inference_image_decoder(
                     encoded_result.origin_size,
-                    encoded_result.encoder_output["vision_features"]
+                    encoded_result.encoder_output["backbone_fpn_2"]
                         .try_extract_tensor::<f32>()?
                         .into_dimensionality::<Ix4>()?,
                     encoded_result.encoder_output["backbone_fpn_0"]
@@ -243,8 +243,7 @@ impl SAMVideoInferenceSession {
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
                     vec![1, 3, 1024, 1024],
                 )?;
-                self.image_encoder
-                    .run(vec![("input_image", SessionInputValue::from(tensor))])?
+                self.image_encoder.run(inputs![tensor])?
             },
         };
 
