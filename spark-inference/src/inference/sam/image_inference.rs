@@ -1,7 +1,6 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
-use crate::inference::sam::video_inference::SamEncoderOutput;
+use crate::inference::sam::SamEncoderOutput;
 use crate::utils::graph::SamPrompt;
-use crate::utils::tensor::linear_interpolate;
 use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
 use anyhow::Result;
 use bitvec::prelude::*;
@@ -28,8 +27,7 @@ pub trait SamImageInference {
 
 pub struct SAMImageInferenceSession {
     pub(super) image_encoder: OnnxSession,
-    pub(super) mask_decoder: OnnxSession,
-    pub(super) prompt_encoder: OnnxSession,
+    pub(super) image_decoder: OnnxSession,
 }
 
 impl SAMImageInferenceSession {
@@ -38,19 +36,14 @@ impl SAMImageInferenceSession {
             folder_path.as_ref().join("image_encoder.onnx"),
             ExecutionProvider::CPU,
         )?;
-        let mask_decoder = OnnxSession::new(
-            folder_path.as_ref().join("mask_decoder.onnx"),
-            ExecutionProvider::CPU,
-        )?;
-        let prompt_encoder = OnnxSession::new(
-            folder_path.as_ref().join("prompt_encoder.onnx"),
+        let image_decoder = OnnxSession::new(
+            folder_path.as_ref().join("image_decoder.onnx"),
             ExecutionProvider::CPU,
         )?;
 
         Ok(Self {
             image_encoder,
-            mask_decoder,
-            prompt_encoder,
+            image_decoder,
         })
     }
 }
@@ -81,20 +74,20 @@ impl SamImageInference for SAMImageInferenceSession {
     ) -> Result<BitVec> {
         let mask_decoder_output = self.inference_image_decoder(
             encoded_result.origin_size,
-            encoded_result.encoder_output["vision_features"]
+            encoded_result.encoder_output["image_embeddings"]
                 .try_extract_tensor::<f32>()?
                 .into_dimensionality::<Ix4>()?,
-            encoded_result.encoder_output["backbone_fpn_0"]
+            encoded_result.encoder_output["high_res_features1"]
                 .try_extract_tensor::<f32>()?
                 .into_dimensionality::<Ix4>()?,
-            encoded_result.encoder_output["backbone_fpn_1"]
+            encoded_result.encoder_output["high_res_features2"]
                 .try_extract_tensor::<f32>()?
                 .into_dimensionality::<Ix4>()?,
             &prompt,
         )?;
 
         let pred_mask = mask_decoder_output["masks"].try_extract_tensor::<f32>()?;
-        let iou_predictions = mask_decoder_output["iou_pred"].try_extract_tensor::<f32>()?;
+        let iou_predictions = mask_decoder_output["iou_predictions"].try_extract_tensor::<f32>()?;
         let max_index = iou_predictions
             .iter()
             .enumerate()
@@ -103,8 +96,7 @@ impl SamImageInference for SAMImageInferenceSession {
             .0;
 
         let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
-        let pred_mask = pred_mask.into_shape_with_order((256, 256))?;
-        let pred_mask = linear_interpolate(pred_mask.into_owned(), (1024, 1024));
+        let pred_mask = pred_mask.into_shape_with_order((1024, 1024))?;
 
         let back = {
             let mut back = BitVec::with_capacity(pred_mask.len());
@@ -180,7 +172,7 @@ impl SAMImageInferenceSession {
 
         prompt: &SamPrompt<f32>,
     ) -> Result<SessionOutputs> {
-        let mask_input = Array3::<f32>::zeros((1, 256, 256));
+        let mask_input = Array4::<f32>::zeros((1, 1, 256, 256));
 
         let trans_prompt = match &prompt {
             SamPrompt::Box(boxes) => {
@@ -210,9 +202,9 @@ impl SAMImageInferenceSession {
         };
 
         let point_labels = match prompt {
-            SamPrompt::Point(_) => array![[1]],
-            SamPrompt::Box(_) => array![[1, 1]],
-            SamPrompt::Both(_, _) => array![[1, 1, 1]],
+            SamPrompt::Point(_) => array![[1_f32]],
+            SamPrompt::Box(_) => array![[1_f32, 1_f32]],
+            SamPrompt::Both(_, _) => array![[1_f32, 1_f32, 1_f32]],
         };
 
         let prompt_out = match prompt {
@@ -221,21 +213,17 @@ impl SAMImageInferenceSession {
             SamPrompt::Both(_, _) => trans_prompt.into_shape_with_order((1, 3, 2))?,
         };
 
-        let prompt_result = self.prompt_encoder.run(inputs![
-            "coords" => Tensor::from_array(prompt_out)?,
-            "labels" => Tensor::from_array(point_labels)?,
-            "masks" => Tensor::from_array(mask_input)?,
-            "masks_enable" => Tensor::from_array(array![0])?,
-        ])?;
+        let result = self.image_decoder.run(inputs![
+            "image_embeddings"      => TensorRef::from_array_view(feats)?,
+            "high_res_features1"    => TensorRef::from_array_view(feat0)?,
+            "high_res_features2"    => TensorRef::from_array_view(feat1)?,
 
-        let result = self.mask_decoder.run(inputs![
-            "image_embeddings" => TensorRef::from_array_view(feats)?,
-            "high_res_features1" => TensorRef::from_array_view(feat0)?,
-            "high_res_features2" => TensorRef::from_array_view(feat1)?,
+            "point_coords"          => Tensor::from_array(prompt_out)?,
+            "point_labels"          => Tensor::from_array(point_labels)?,
+            "mask_input"            => Tensor::from_array(mask_input)?,
+            "has_mask_input"        => Tensor::from_array(array![0_f32])?,
 
-            "image_pe" => TensorRef::from_array_view(prompt_result["dense_pe"].try_extract_tensor::<f32>()?)?,
-            "sparse_prompt_embeddings" => TensorRef::from_array_view(prompt_result["sparse_embeddings"].try_extract_tensor::<f32>()?)?,
-            "dense_prompt_embeddings" => TensorRef::from_array_view(prompt_result["dense_embeddings"].try_extract_tensor::<f32>()?)?,
+            "orig_im_size"          => Tensor::from_array(array![1024 as i64, 1024 as i64])?,
         ])?;
 
         Ok(result)

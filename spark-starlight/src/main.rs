@@ -22,9 +22,9 @@ fn main() -> Result<()> {
     disable_ffmpeg_logging();
 
     let yolo = YoloDetectSession::new("./data/model")?;
-    let sam2 = SAMImageInferenceSession::new("./data/model/other3")?;
+    let sam2 = SAMImageInferenceSession::new("./data/model/other4")?;
 
-    let path = "./data/image/c.jpg";
+    let path = "./data/image/d4.jpg";
     let image = Image::open_file(path)?;
 
     let results = yolo.inference_yolo(image, 0.25)?;
@@ -113,12 +113,12 @@ fn main() -> Result<()> {
 
     for x in highway_mask {
         if let Ok(mask) = x {
-            image.layering_mask(&mask, RGB(0, 75, 0))?;
+            image.layering_mask(&mask, RGB(75, 0, 0))?;
         }
     }
     for x in sidewalk_mask {
         if let Ok(mask) = x {
-            image.layering_mask(&mask, RGB(0, 75, 0))?;
+            image.layering_mask(&mask, RGB(0, 0, 75))?;
         }
     }
     image.save_with_format("./data/out/a_out.png")?;
