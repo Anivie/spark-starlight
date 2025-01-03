@@ -2,7 +2,7 @@ use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use crate::{INFERENCE_YOLO, RUNNING_YOLO_DEVICE};
 use anyhow::Result;
 use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
-use log::debug;
+use log::{debug, info};
 use ndarray::{s, Axis, Ix2};
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
 use ort::value::TensorRefMut;
@@ -29,10 +29,13 @@ pub struct YoloDetectSession(OnnxSession);
 
 impl YoloDetectSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
-        Ok(Self(OnnxSession::new(
+        let yolo_detect_session = Self(OnnxSession::new(
             folder_path.as_ref().join("yolo_detect.onnx"),
             ExecutionProvider::CUDA(RUNNING_YOLO_DEVICE),
-        )?))
+        )?);
+        info!("Yolo Inference Session created");
+
+        Ok(yolo_detect_session)
     }
 }
 
@@ -44,8 +47,8 @@ impl YoloDetectInference for YoloDetectSession {
             .add_context("format", "rgb24")?
             .build()?;
 
-        let (image_width, image_height) = image.get_size();
-        let (image_width, image_height) = (image_width as f32, image_height as f32);
+        // let (image_width, image_height) = image.get_size();
+        // let (image_width, image_height) = (image_width as f32, image_height as f32);
 
         image.apply_filter(&filter)?;
 
@@ -98,7 +101,7 @@ impl YoloDetectInference for YoloDetectSession {
             })
             .map(|box_output| {
                 let score = box_output.slice(s![4..box_output.len()]).to_vec();
-                let (x, y, width, height) = yolo_to_image_coords(
+                /*let (x, y, width, height) = yolo_to_image_coords(
                     box_output[0],
                     box_output[1],
                     box_output[2],
@@ -107,13 +110,13 @@ impl YoloDetectInference for YoloDetectSession {
                     image_height,
                     640.0,
                     640.0,
-                );
+                );*/
                 YoloDetectResult {
                     score,
-                    x,
-                    y,
-                    width,
-                    height,
+                    x: box_output[0],
+                    y: box_output[1],
+                    width: box_output[2],
+                    height: box_output[3],
                 }
             })
             .collect::<Vec<_>>();

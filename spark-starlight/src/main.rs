@@ -5,6 +5,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use anyhow::Result;
+use log::info;
 use spark_inference::disable_ffmpeg_logging;
 use spark_inference::inference::sam::image_inference::{
     SAMImageInferenceSession, SamImageInference,
@@ -17,14 +18,160 @@ use spark_inference::utils::graph::SamPrompt;
 use spark_inference::utils::masks::ApplyMask;
 use spark_media::filter::filter::AVFilter;
 use spark_media::{Image, RGB};
+use tklog::{Format, LEVEL, LOG};
+
+fn log_init() {
+    LOG.set_console(true) // Enables console logging
+        .set_level(LEVEL::Info) // Sets the log level; default is Debug
+        // .set_format(Format::LevelFlag | Format::Time | Format::ShortFileName)  // Defines structured log output with chosen details
+        // .set_cutmode_by_size("tklogsize.txt", 1<<20, 10, true)  // Cuts logs by file size (1 MB), keeps 10 backups, compresses backups
+        .uselog(); // Customizes log output format; default is "{level}{time} {file}:{message}"
+}
 
 fn main() -> Result<()> {
+    log_init();
     disable_ffmpeg_logging();
 
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAMImageInferenceSession::new("./data/model/other4")?;
 
     let path = "./data/image/d4.jpg";
+    let image = Image::open_file(path)?;
+
+    let results = yolo.inference_yolo(image, 0.25)?;
+    println!("results: {:?}", results.len());
+
+    let result_highway = results
+        .clone()
+        .into_iter()
+        .filter(|result| result.score[0] >= 0.8)
+        .collect::<Vec<_>>();
+    let result_sidewalk = results
+        .into_iter()
+        .filter(|result| result.score[1] >= 0.4)
+        .collect::<Vec<_>>();
+    let result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
+    let result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
+
+    info!("yolo highway result: {:?}", result_highway);
+    info!("yolo sidewalk result: {:?}", result_sidewalk);
+
+    let image = Image::open_file(path)?;
+    let result = sam2.encode_image(image)?;
+
+    let block = get_pixel_clown();
+    for (index, value) in block.iter().enumerate() {
+        if value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32)) {
+            println!("sidewalk clown index: {:?}", index);
+        }
+    }
+    let x = get_pixel_clown()
+        .iter()
+        .enumerate()
+        .filter(|(index, value)| {
+            value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32))
+        })
+        .map(|(index, _)| index)
+        .zip(
+            get_pixel_row()
+                .iter()
+                .enumerate()
+                .filter(|(index, value)| {
+                    value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32))
+                })
+                .map(|(index, _)| index),
+        )
+        .collect::<Vec<_>>();
+
+    let block = get_pixel_row();
+    for (index, value) in block.iter().enumerate() {
+        if value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32)) {
+            println!("sidewalk row index: {:?}", index);
+        }
+    }
+
+    let highway_mask = result_highway
+        .into_iter()
+        .map(|yolo| {
+            sam2.inference_frame(
+                SamPrompt::both(
+                    (
+                        yolo.x - yolo.width / 2.0,
+                        yolo.y - yolo.height / 2.0,
+                        yolo.x + yolo.width / 2.0,
+                        yolo.y + yolo.height / 2.0,
+                    ),
+                    (yolo.x, yolo.y),
+                ),
+                &result,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let sidewalk_mask = result_sidewalk
+        .into_iter()
+        .map(|yolo| {
+            sam2.inference_frame(
+                SamPrompt::both(
+                    (
+                        yolo.x - yolo.width / 2.0,
+                        yolo.y - yolo.height / 2.0,
+                        yolo.x + yolo.width / 2.0,
+                        yolo.y + yolo.height / 2.0,
+                    ),
+                    (yolo.x, yolo.y),
+                ),
+                &result,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    Ok(())
+}
+
+fn get_pixel_row() -> Vec<Vec<(u32, u32)>> {
+    let width = 640;
+    let height = 640;
+    let parts = 5;
+    let part_height = (height as f32 / parts as f32).floor() as usize;
+
+    let mut result = vec![Vec::new(); parts];
+
+    for y in 0..height {
+        for x in 0..width {
+            let part_index = (y / part_height).min(parts - 1);
+            result[part_index].push((x as u32, y as u32));
+        }
+    }
+
+    result
+}
+
+fn get_pixel_clown() -> Vec<Vec<(u32, u32)>> {
+    let width = 640;
+    let height = 640;
+    let parts = 5;
+    let part_width = (width as f32 / parts as f32).floor() as usize; // 每份的宽度
+
+    let mut result = vec![Vec::new(); parts];
+
+    for y in 0..height {
+        for x in 0..width {
+            let part_index = (x / part_width).min(parts - 1); // 确定当前像素属于哪个部分
+            result[part_index].push((x as u32, y as u32));
+        }
+    }
+
+    result
+}
+
+fn main_debug() -> Result<()> {
+    disable_ffmpeg_logging();
+
+    let yolo = YoloDetectSession::new("./data/model")?;
+    let sam2 = SAMImageInferenceSession::new("./data/model/other4")?;
+
+    let path = "./data/image/RainSight23.jpg";
     let image = Image::open_file(path)?;
 
     let results = yolo.inference_yolo(image, 0.25)?;

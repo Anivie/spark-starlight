@@ -31,4 +31,5 @@ pub fn disable_ffmpeg_logging() {
     unsafe {
         ffi::av_log_set_level(ffi::AV_LOG_QUIET);
     }
+    log::warn!("FFmpeg logging has been disabled");
 }

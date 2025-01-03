@@ -5,6 +5,7 @@ use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
 use anyhow::Result;
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
+use log::info;
 use ndarray::prelude::*;
 use ort::inputs;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
@@ -40,6 +41,7 @@ impl SAMImageInferenceSession {
             folder_path.as_ref().join("image_decoder.onnx"),
             ExecutionProvider::CPU,
         )?;
+        info!("SAM Image Inference Session created");
 
         Ok(Self {
             image_encoder,
@@ -96,7 +98,7 @@ impl SamImageInference for SAMImageInferenceSession {
             .0;
 
         let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
-        let pred_mask = pred_mask.into_shape_with_order((1024, 1024))?;
+        let pred_mask = pred_mask.into_shape_with_order((640, 640))?;
 
         let back = {
             let mut back = BitVec::with_capacity(pred_mask.len());
@@ -223,7 +225,7 @@ impl SAMImageInferenceSession {
             "mask_input"            => Tensor::from_array(mask_input)?,
             "has_mask_input"        => Tensor::from_array(array![0_f32])?,
 
-            "orig_im_size"          => Tensor::from_array(array![1024 as i64, 1024 as i64])?,
+            "orig_im_size"          => Tensor::from_array(array![640i64, 640i64])?,
         ])?;
 
         Ok(result)
