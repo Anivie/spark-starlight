@@ -7,9 +7,9 @@ edition = "2021"
 spark-inference = { path = "../spark-inference" }
 spark-media = { path = "../spark-media" }
 
-mimalloc = "0.1.43"
+mimalloc = "0.1.44"
 bitvec = "1.0.1"
 
-anyhow = "1.0.95"
-log = "0.4.22"
+anyhow = "1.0.97"
+log = "0.4.27"
 tklog = "0.2.9"

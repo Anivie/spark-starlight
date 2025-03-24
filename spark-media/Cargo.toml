@@ -6,8 +6,8 @@ edition = "2021"
 [dependencies]
 spark-ffmpeg = { path = "../spark-ffmpeg" }
 
-anyhow = "1.0.95"
-log = "0.4.22"
+anyhow = "1.0.97"
+log = "0.4.27"
 
 parking_lot = { version = "0.12.3", features = ["nightly"] }
 hashbrown = { version = "0.15.2", features = ["nightly"] }

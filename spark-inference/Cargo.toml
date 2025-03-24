@@ -4,15 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-log = "0.4.22"
+log = "0.4.27"
 
 rayon = "1.10.0"
 bitvec = "1.0.1"
 num = "0.4.3"
 
-anyhow = "1.0.95"
+anyhow = "1.0.97"
 
-cudarc = { version = "0.12.2", features = ["cuda-version-from-build-system", "cudnn"] }
+cudarc = { version = "0.13.9", features = ["cuda-version-from-build-system", "cudnn"] }
+parking_lot = { version = "0.12", features = ["nightly"] }
 
 spark-ffmpeg = { path = "../spark-ffmpeg" }
 spark-media = { path = "../spark-media" }

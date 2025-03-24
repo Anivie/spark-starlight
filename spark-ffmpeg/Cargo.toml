@@ -6,13 +6,13 @@ edition = "2021"
 [build-dependencies]
 bindgen = "0.71.1"
 rayon = "1.10.0"
-convert_case = "0.6.0"
+convert_case = "0.8.0"
 
 [dependencies]
 spark-proc_macro = { path = "../spark-proc_macro" }
 
-anyhow = "1.0.95"
+anyhow = "1.0.97"
 num_enum = "0.7.3"
 rayon = "1.10.0"
 
-log = "0.4.22"
+log = "0.4.27"
