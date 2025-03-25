@@ -8,11 +8,24 @@ use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::debug;
 use ndarray::{s, Axis, Ix2, Ix3};
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
+use ort::tensor::Shape;
 use ort::value::TensorRefMut;
+use parking_lot::Mutex;
 use rayon::prelude::*;
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
 use std::cmp::Ordering;
+use std::ops::Deref;
+
+pub struct YoloSegmentSession(Mutex<OnnxSession>);
+
+impl Deref for YoloSegmentSession {
+    type Target = Mutex<OnnxSession>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub trait YoloSegmentInference {
     fn inference_yolo(
@@ -31,7 +44,7 @@ pub struct YoloInferenceResult {
     pub score: f32,
 }
 
-impl YoloSegmentInference for OnnxSession {
+impl YoloSegmentInference for YoloSegmentSession {
     fn inference_yolo(
         &self,
         mut image: Image,
@@ -64,7 +77,7 @@ impl YoloSegmentInference for OnnxSession {
                         MemoryType::Default,
                     )?,
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
-                    vec![1, 3, 640, 640],
+                    Shape::new([1, 3, 640, 640]),
                 )?;
 
                 back
@@ -73,17 +86,21 @@ impl YoloSegmentInference for OnnxSession {
             tensor
         };
 
-        debug!("Finish copying tensor to device");
-        let outputs = self.session.run([tensor.into()])?;
-        debug!("Finish running model");
+        let (output_first, output_second) = {
+            debug!("Finish copying tensor to device");
+            let mut guard = self.lock();
+            let outputs = guard.run([tensor.into()])?;
+            debug!("Finish running model");
 
-        let output_first = outputs["output0"]
-            .try_extract_tensor::<f32>()?
-            .t()
-            .into_owned();
-        let output_first = output_first.squeeze().into_dimensionality::<Ix2>()?;
-
-        let output_second = outputs["output1"].try_extract_tensor::<f32>()?.into_owned();
+            let output_first = outputs["output0"]
+                .try_extract_array::<f32>()?
+                .t()
+                .into_owned();
+            (
+                output_first.squeeze().into_dimensionality::<Ix2>()?,
+                outputs["output1"].try_extract_array::<f32>()?.into_owned(),
+            )
+        };
         let output_second = output_second.squeeze().into_dimensionality::<Ix3>()?;
         let output_second = output_second.to_shape((32, 25600))?;
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use ort::session::Session;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
 
 pub struct OnnxSession {
@@ -8,6 +8,7 @@ pub struct OnnxSession {
     pub(crate) executor: ExecutionProvider,
 }
 
+#[derive(Copy, Clone)]
 pub enum ExecutionProvider {
     CPU,
     CUDA(i32),
@@ -19,6 +20,12 @@ impl Deref for OnnxSession {
 
     fn deref(&self) -> &Self::Target {
         &self.session
+    }
+}
+
+impl DerefMut for OnnxSession {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.session
     }
 }
 

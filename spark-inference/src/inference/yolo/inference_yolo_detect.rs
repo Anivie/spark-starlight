@@ -5,10 +5,13 @@ use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::{debug, info};
 use ndarray::{s, Axis, Ix2};
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
+use ort::tensor::Shape;
 use ort::value::TensorRefMut;
+use parking_lot::Mutex;
 use rayon::prelude::*;
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
+use std::ops::Deref;
 use std::path::Path;
 
 pub trait YoloDetectInference {
@@ -25,17 +28,25 @@ pub struct YoloDetectResult {
     pub height: f32,
 }
 
-pub struct YoloDetectSession(OnnxSession);
+pub struct YoloDetectSession(Mutex<OnnxSession>);
 
 impl YoloDetectSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
-        let yolo_detect_session = Self(OnnxSession::new(
+        let yolo_detect_session = Self(Mutex::new(OnnxSession::new(
             folder_path.as_ref().join("yolo_detect.onnx"),
             ExecutionProvider::CUDA(RUNNING_YOLO_DEVICE),
-        )?);
+        )?));
         info!("Yolo Inference Session created");
 
         Ok(yolo_detect_session)
+    }
+}
+
+impl Deref for YoloDetectSession {
+    type Target = Mutex<OnnxSession>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -71,7 +82,7 @@ impl YoloDetectInference for YoloDetectSession {
                         MemoryType::Default,
                     )?,
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
-                    vec![1, 3, 640, 640],
+                    Shape::new([1, 3, 640, 640]),
                 )?;
 
                 back
@@ -80,15 +91,18 @@ impl YoloDetectInference for YoloDetectSession {
             tensor
         };
 
-        debug!("Finish copying tensor to device");
-        let outputs = self.0.run([tensor.into()])?;
-        debug!("Finish running model");
+        let output_first = {
+            debug!("Finish copying tensor to device");
+            let mut guard = self.lock();
+            let outputs = guard.run([tensor.into()])?;
+            debug!("Finish running model");
 
-        let output_first = outputs["output0"]
-            .try_extract_tensor::<f32>()?
-            .t()
-            .into_owned();
-        let output_first = output_first.squeeze().into_dimensionality::<Ix2>()?;
+            let output_first = outputs["output0"]
+                .try_extract_array::<f32>()?
+                .t()
+                .into_owned();
+            output_first.squeeze().into_dimensionality::<Ix2>()?
+        };
 
         let result = output_first
             .axis_iter(Axis(0))
@@ -101,16 +115,6 @@ impl YoloDetectInference for YoloDetectSession {
             })
             .map(|box_output| {
                 let score = box_output.slice(s![4..box_output.len()]).to_vec();
-                /*let (x, y, width, height) = yolo_to_image_coords(
-                    box_output[0],
-                    box_output[1],
-                    box_output[2],
-                    box_output[3],
-                    image_width,
-                    image_height,
-                    640.0,
-                    640.0,
-                );*/
                 YoloDetectResult {
                     score,
                     x: box_output[0],

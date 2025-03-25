@@ -9,13 +9,16 @@ use log::info;
 use ndarray::prelude::*;
 use ort::inputs;
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
-use ort::session::{SessionInputValue, SessionOutputs};
-use ort::value::{Tensor, TensorRef, TensorRefMut};
+use ort::session::{Session, SessionInputValue, SessionOutputs};
+use ort::tensor::Shape;
+use ort::value::{DynValue, Tensor, TensorRef, TensorRefMut};
+use parking_lot::{Mutex, RwLock};
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
-use std::ops::Deref;
+use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 pub trait SamImageInference {
     fn encode_image(&self, image: Image) -> Result<SamEncoderOutput>;
@@ -27,8 +30,8 @@ pub trait SamImageInference {
 }
 
 pub struct SAMImageInferenceSession {
-    pub(super) image_encoder: OnnxSession,
-    pub(super) image_decoder: OnnxSession,
+    pub(super) image_encoder: Mutex<OnnxSession>,
+    pub(super) image_decoder: Mutex<OnnxSession>,
 }
 
 impl SAMImageInferenceSession {
@@ -44,8 +47,8 @@ impl SAMImageInferenceSession {
         info!("SAM Image Inference Session created");
 
         Ok(Self {
-            image_encoder,
-            image_decoder,
+            image_encoder: Mutex::new(image_encoder),
+            image_decoder: Mutex::new(image_decoder),
         })
     }
 }
@@ -77,19 +80,19 @@ impl SamImageInference for SAMImageInferenceSession {
         let mask_decoder_output = self.inference_image_decoder(
             encoded_result.origin_size,
             encoded_result.encoder_output["image_embeddings"]
-                .try_extract_tensor::<f32>()?
+                .try_extract_array::<f32>()?
                 .into_dimensionality::<Ix4>()?,
             encoded_result.encoder_output["high_res_features1"]
-                .try_extract_tensor::<f32>()?
+                .try_extract_array::<f32>()?
                 .into_dimensionality::<Ix4>()?,
             encoded_result.encoder_output["high_res_features2"]
-                .try_extract_tensor::<f32>()?
+                .try_extract_array::<f32>()?
                 .into_dimensionality::<Ix4>()?,
             &prompt,
         )?;
 
-        let pred_mask = mask_decoder_output["masks"].try_extract_tensor::<f32>()?;
-        let iou_predictions = mask_decoder_output["iou_predictions"].try_extract_tensor::<f32>()?;
+        let pred_mask = mask_decoder_output["masks"].try_extract_array::<f32>()?;
+        let iou_predictions = mask_decoder_output["iou_predictions"].try_extract_array::<f32>()?;
         let max_index = iou_predictions
             .iter()
             .enumerate()
@@ -112,7 +115,7 @@ impl SamImageInference for SAMImageInferenceSession {
 }
 
 impl SAMImageInferenceSession {
-    fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<SessionOutputs> {
+    fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<HashMap<String, DynValue>> {
         static MEAN: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
             INFERENCE_SAM
                 .htod_sync_copy(&[0.485, 0.456, 0.406])
@@ -138,12 +141,12 @@ impl SAMImageInferenceSession {
             tensor
         };
 
-        let session_outputs = match self.image_encoder.executor {
+        let mut image_encoder = self.image_encoder.lock();
+        let session_outputs = match image_encoder.executor {
             ExecutionProvider::CPU => {
                 let tensor = INFERENCE_SAM.dtoh_sync_copy(&tensor)?;
                 let tensor = Array4::from_shape_vec((1, 3, 1024, 1024), tensor)?;
-                self.image_encoder
-                    .run(inputs![Tensor::from_array(tensor)?])?
+                image_encoder.run(inputs![Tensor::from_array(tensor)?])?
             }
             _ => unsafe {
                 let tensor: TensorRefMut<'_, f32> = TensorRefMut::from_raw(
@@ -154,12 +157,16 @@ impl SAMImageInferenceSession {
                         MemoryType::Default,
                     )?,
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
-                    vec![1, 3, 1024, 1024],
+                    Shape::new([1, 3, 1024, 1024]),
                 )?;
-                self.image_encoder
-                    .run(vec![("input_image", SessionInputValue::from(tensor))])?
+                image_encoder.run(vec![("input_image", SessionInputValue::from(tensor))])?
             },
         };
+
+        let session_outputs = session_outputs
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect::<HashMap<String, DynValue>>();
 
         Ok(session_outputs)
     }
@@ -173,7 +180,7 @@ impl SAMImageInferenceSession {
         feat1: ArrayView4<f32>,
 
         prompt: &SamPrompt<f32>,
-    ) -> Result<SessionOutputs> {
+    ) -> Result<HashMap<String, DynValue>> {
         let mask_input = Array4::<f32>::zeros((1, 1, 256, 256));
 
         let trans_prompt = match &prompt {
@@ -215,7 +222,8 @@ impl SAMImageInferenceSession {
             SamPrompt::Both(_, _) => trans_prompt.into_shape_with_order((1, 3, 2))?,
         };
 
-        let result = self.image_decoder.run(inputs![
+        let mut decoder = self.image_decoder.lock();
+        let result = decoder.run(inputs![
             "image_embeddings"      => TensorRef::from_array_view(feats)?,
             "high_res_features1"    => TensorRef::from_array_view(feat0)?,
             "high_res_features2"    => TensorRef::from_array_view(feat1)?,
@@ -227,6 +235,11 @@ impl SAMImageInferenceSession {
 
             "orig_im_size"          => Tensor::from_array(array![640i64, 640i64])?,
         ])?;
+
+        let result = result
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect::<HashMap<String, DynValue>>();
 
         Ok(result)
     }
