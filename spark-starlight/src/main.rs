@@ -11,7 +11,7 @@ use spark_inference::inference::sam::image_inference::{
     SAMImageInferenceSession, SamImageInference,
 };
 use spark_inference::inference::yolo::inference_yolo_detect::{
-    YoloDetectInference, YoloDetectSession,
+    YoloDetectInference, YoloDetectResult, YoloDetectSession,
 };
 use spark_inference::inference::yolo::NMSImplement;
 use spark_inference::utils::graph::SamPrompt;
@@ -37,9 +37,10 @@ fn main() -> Result<()> {
 
     let path = "./data/image/d4.jpg";
     let image = Image::open_file(path)?;
+    let (image_width, image_height) = image.get_size();
 
     let results = yolo.inference_yolo(image, 0.25)?;
-    println!("results: {:?}", results.len());
+    info!("detect results: {:?}", results.len());
 
     let result_highway = results
         .clone()
@@ -56,76 +57,132 @@ fn main() -> Result<()> {
     info!("yolo highway result: {:?}", result_highway);
     info!("yolo sidewalk result: {:?}", result_sidewalk);
 
-    let image = Image::open_file(path)?;
-    let result = sam2.encode_image(image)?;
-
-    let block = get_pixel_clown();
-    for (index, value) in block.iter().enumerate() {
-        if value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32)) {
-            println!("sidewalk clown index: {:?}", index);
-        }
+    // Add this function
+    fn describe_detection(
+        class: &str,
+        result_x: f32,
+        result_y: f32,
+        width: f32,
+        height: f32,
+    ) -> String {
+        let bin_x = ((result_x / width) * 8.0).floor() as usize;
+        let bin_x = bin_x.min(7);
+        let direction = match bin_x {
+            0 => "9 o'clock",
+            1 => "10 o'clock",
+            2 => "11 o'clock",
+            3 => "12 o'clock",
+            4 => "1 o'clock",
+            5 => "2 o'clock",
+            6 => "3 o'clock",
+            7 => "3 o'clock",
+            _ => unreachable!(),
+        };
+        let bin_y = ((result_y / height) * 4.0).floor() as usize;
+        let bin_y = bin_y.min(3);
+        let distance = match bin_y {
+            0 => "far away",
+            1 => "near",
+            2 => "relatively close",
+            3 => "very close",
+            _ => unreachable!(),
+        };
+        format!("There is a {} at {} and {}.", class, direction, distance)
     }
-    let x = get_pixel_clown()
-        .iter()
-        .enumerate()
-        .filter(|(index, value)| {
-            value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32))
-        })
-        .map(|(index, _)| index)
-        .zip(
-            get_pixel_row()
-                .iter()
-                .enumerate()
-                .filter(|(index, value)| {
-                    value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32))
-                })
-                .map(|(index, _)| index),
-        )
-        .collect::<Vec<_>>();
 
-    let block = get_pixel_row();
-    for (index, value) in block.iter().enumerate() {
-        if value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32)) {
-            println!("sidewalk row index: {:?}", index);
-        }
+    for result in &result_highway {
+        let description = describe_detection(
+            "highway",
+            result.x,
+            result.y,
+            image_width as f32,
+            image_height as f32,
+        );
+        println!("{}", description);
     }
+    for result in &result_sidewalk {
+        let description = describe_detection(
+            "sidewalk",
+            result.x,
+            result.y,
+            image_width as f32,
+            image_height as f32,
+        );
+        println!("{}", description);
+    }
+    /*
+        let image = Image::open_file(path)?;
+        let result = sam2.encode_image(image)?;
 
-    let highway_mask = result_highway
-        .into_iter()
-        .map(|yolo| {
-            sam2.inference_frame(
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
-                ),
-                &result,
+        let block = get_pixel_clown();
+        for (index, value) in block.iter().enumerate() {
+            if value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32)) {
+                println!("sidewalk clown index: {:?}", index);
+            }
+        }
+        let x = get_pixel_clown()
+            .iter()
+            .enumerate()
+            .filter(|(index, value)| {
+                value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32))
+            })
+            .map(|(index, _)| index)
+            .zip(
+                get_pixel_row()
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, value)| {
+                        value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32))
+                    })
+                    .map(|(index, _)| index),
             )
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
-    let sidewalk_mask = result_sidewalk
-        .into_iter()
-        .map(|yolo| {
-            sam2.inference_frame(
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
+        let block = get_pixel_row();
+        for (index, value) in block.iter().enumerate() {
+            if value.contains(&(result_sidewalk[0].x as u32, result_sidewalk[0].y as u32)) {
+                println!("sidewalk row index: {:?}", index);
+            }
+        }
+
+        let highway_mask = result_highway
+            .into_iter()
+            .map(|yolo| {
+                sam2.inference_frame(
+                    SamPrompt::both(
+                        (
+                            yolo.x - yolo.width / 2.0,
+                            yolo.y - yolo.height / 2.0,
+                            yolo.x + yolo.width / 2.0,
+                            yolo.y + yolo.height / 2.0,
+                        ),
+                        (yolo.x, yolo.y),
                     ),
-                    (yolo.x, yolo.y),
-                ),
-                &result,
-            )
-        })
-        .collect::<Vec<_>>();
+                    None,
+                    &result,
+                )
+            })
+            .collect::<Vec<_>>();
 
+        let sidewalk_mask = result_sidewalk
+            .into_iter()
+            .map(|yolo| {
+                sam2.inference_frame(
+                    SamPrompt::both(
+                        (
+                            yolo.x - yolo.width / 2.0,
+                            yolo.y - yolo.height / 2.0,
+                            yolo.x + yolo.width / 2.0,
+                            yolo.y + yolo.height / 2.0,
+                        ),
+                        (yolo.x, yolo.y),
+                    ),
+                    None,
+                    &result,
+                )
+            })
+            .collect::<Vec<_>>();
+    */
     Ok(())
 }
 
@@ -165,13 +222,14 @@ fn get_pixel_clown() -> Vec<Vec<(u32, u32)>> {
     result
 }
 
-fn main_debug() -> Result<()> {
+fn debug() -> Result<()> {
+    log_init();
     disable_ffmpeg_logging();
 
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAMImageInferenceSession::new("./data/model/other4")?;
 
-    let path = "./data/image/RainSight23.jpg";
+    let path = "./data/image/d4.jpg";
     let image = Image::open_file(path)?;
 
     let results = yolo.inference_yolo(image, 0.25)?;
@@ -235,6 +293,7 @@ fn main_debug() -> Result<()> {
                     ),
                     (yolo.x, yolo.y),
                 ),
+                Some((1024, 1024)),
                 &result,
             )
         })
@@ -253,6 +312,7 @@ fn main_debug() -> Result<()> {
                     ),
                     (yolo.x, yolo.y),
                 ),
+                Some((1024, 1024)),
                 &result,
             )
         })
