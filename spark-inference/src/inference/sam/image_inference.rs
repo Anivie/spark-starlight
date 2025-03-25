@@ -40,11 +40,11 @@ impl SAMImageInferenceSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
         let image_encoder = OnnxSession::new(
             folder_path.as_ref().join("image_encoder.onnx"),
-            ExecutionProvider::CPU,
+            ExecutionProvider::CUDA(0),
         )?;
         let image_decoder = OnnxSession::new(
             folder_path.as_ref().join("image_decoder.onnx"),
-            ExecutionProvider::CPU,
+            ExecutionProvider::CUDA(0),
         )?;
         info!("SAM Image Inference Session created");
 
@@ -181,7 +181,7 @@ impl SAMImageInferenceSession {
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
                     Shape::new([1, 3, 1024, 1024]),
                 )?;
-                image_encoder.run(vec![("input_image", SessionInputValue::from(tensor))])?
+                image_encoder.run(vec![("input", SessionInputValue::from(tensor))])?
             },
         };
 
