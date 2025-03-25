@@ -14,6 +14,15 @@ impl ApplyMask for Image {
         let mut data = self.raw_data()?;
         let ptr = SafePtr::new(data.as_mut_ptr());
 
+        if self.get_width() * self.get_height() > mask.len() as i32 {
+            return Err(anyhow::anyhow!(
+                "Mask size does not match image size, current image size: {}x{}, mask size: {}",
+                self.get_width(),
+                self.get_height(),
+                mask.len()
+            ));
+        }
+
         (0..(self.get_width() * self.get_height() * 3) as usize)
             .into_par_iter()
             .for_each(|index| {

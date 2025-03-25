@@ -1,6 +1,7 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use crate::inference::sam::SamEncoderOutput;
 use crate::utils::graph::SamPrompt;
+use crate::utils::tensor::linear_interpolate;
 use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
 use anyhow::Result;
 use bitvec::prelude::*;
@@ -25,6 +26,7 @@ pub trait SamImageInference {
     fn inference_frame(
         &self,
         prompt: SamPrompt<f32>,
+        output_size: Option<(i32, i32)>,
         encoded_result: &SamEncoderOutput,
     ) -> Result<BitVec>;
 }
@@ -75,6 +77,7 @@ impl SamImageInference for SAMImageInferenceSession {
     fn inference_frame(
         &self,
         prompt: SamPrompt<f32>,
+        output_size: Option<(i32, i32)>,
         encoded_result: &SamEncoderOutput,
     ) -> Result<BitVec> {
         let mask_decoder_output = self.inference_image_decoder(
@@ -101,7 +104,26 @@ impl SamImageInference for SAMImageInferenceSession {
             .0;
 
         let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
-        let pred_mask = pred_mask.into_shape_with_order((640, 640))?;
+        let pred_mask = pred_mask.into_shape_with_order((640, 640))?.to_owned();
+        let pred_mask = if let Some(size) = output_size {
+            info!("Resizing mask from 640x640 to {}x{}", size.0, size.1);
+            linear_interpolate(pred_mask, (size.0 as usize, size.1 as usize))
+        } else if encoded_result.origin_size.0 != 640 || encoded_result.origin_size.1 != 640 {
+            info!(
+                "Resizing mask from 640x640 to {}x{}",
+                encoded_result.origin_size.0, encoded_result.origin_size.1
+            );
+            linear_interpolate(
+                pred_mask,
+                (
+                    encoded_result.origin_size.0 as usize,
+                    encoded_result.origin_size.1 as usize,
+                ),
+            )
+        } else {
+            pred_mask
+        };
+        info!("now pred_mask shape: {:?}", pred_mask.shape());
 
         let back = {
             let mut back = BitVec::with_capacity(pred_mask.len());
