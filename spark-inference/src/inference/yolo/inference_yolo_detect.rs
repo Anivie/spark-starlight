@@ -58,8 +58,8 @@ impl YoloDetectInference for YoloDetectSession {
             .add_context("format", "rgb24")?
             .build()?;
 
-        // let (image_width, image_height) = image.get_size();
-        // let (image_width, image_height) = (image_width as f32, image_height as f32);
+        let (image_width, image_height) = image.get_size();
+        let (image_width, image_height) = (image_width as f32, image_height as f32);
 
         image.apply_filter(&filter)?;
 
@@ -115,12 +115,22 @@ impl YoloDetectInference for YoloDetectSession {
             })
             .map(|box_output| {
                 let score = box_output.slice(s![4..box_output.len()]).to_vec();
+                let (x, y, width, height) = yolo_to_image_coords(
+                    box_output[0],
+                    box_output[1],
+                    box_output[2],
+                    box_output[3],
+                    image_width,
+                    image_height,
+                    640.0,
+                    640.0,
+                );
                 YoloDetectResult {
                     score,
-                    x: box_output[0],
-                    y: box_output[1],
-                    width: box_output[2],
-                    height: box_output[3],
+                    x,
+                    y,
+                    width,
+                    height,
                 }
             })
             .collect::<Vec<_>>();

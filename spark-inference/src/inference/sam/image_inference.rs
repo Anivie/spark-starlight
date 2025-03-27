@@ -40,11 +40,11 @@ impl SAMImageInferenceSession {
     pub fn new(folder_path: impl AsRef<Path>) -> Result<Self> {
         let image_encoder = OnnxSession::new(
             folder_path.as_ref().join("image_encoder.onnx"),
-            ExecutionProvider::CUDA(0),
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         let image_decoder = OnnxSession::new(
             folder_path.as_ref().join("image_decoder.onnx"),
-            ExecutionProvider::CUDA(0),
+            ExecutionProvider::CUDA(RUNNING_SAM_DEVICE),
         )?;
         info!("SAM Image Inference Session created");
 
