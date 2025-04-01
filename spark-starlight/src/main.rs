@@ -316,16 +316,16 @@ fn analyze_road_mask(
     if valid_centroids.len() < 2 {
         // Not enough data to determine direction reliably
         // Check for obstacles found even without clear direction
-        if let Some((y, x)) = obstacles.first() {
+        return if let Some((y, x)) = obstacles.first() {
             let obs_dist = get_distance((*y as f32 + 0.5) / image_height as f32); // Use center of pixel row
             let obs_dir = get_direction((*x as f32 + 0.5) / image_width as f32); // Use center of gap
-            return format!(
+            format!(
                 "Sidewalk path unclear, potential obstacle {} at {}",
                 obs_dist, obs_dir
-            );
+            )
         } else {
-            return "Sidewalk path unclear.".to_string();
-        }
+            "Sidewalk path unclear.".to_string()
+        };
     }
 
     // Determine direction based on the first (nearest, largest index) and last (farthest, smallest index) valid centroids
