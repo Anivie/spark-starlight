@@ -39,8 +39,6 @@ fn main() -> Result<()> {
 
     let path = "./data/image/d4.jpg";
     let image = Image::open_file(path)?;
-    let (image_width, image_height) = image.get_size();
-    let (image_width, image_height) = (image_width as f32, image_height as f32);
 
     let results = yolo.inference_yolo(image, 0.25)?;
     info!("detect results: {:?}", results.len());
@@ -59,18 +57,6 @@ fn main() -> Result<()> {
 
     info!("yolo highway result: {:?}", result_highway);
     info!("yolo sidewalk result: {:?}", result_sidewalk);
-
-    // Process highway detections
-    for result in &result_highway {
-        let description = describe_position(result, "highway", image_width, image_height);
-        println!("{}", description);
-    }
-
-    // Process sidewalk detections
-    for result in &result_sidewalk {
-        let description = describe_position(result, "sidewalk", image_width, image_height);
-        println!("{}", description);
-    }
 
     let image = Image::open_file(path)?;
     let result = sam2.encode_image(image)?;
@@ -125,82 +111,46 @@ fn main() -> Result<()> {
     let mask_analysis_height = 1024; // Use the actual height of the masks from SAM
 
     let guidance = analyze_road_mask(sidewalk_mask, mask_analysis_width, mask_analysis_height);
-    println!("\nNavigation Guidance:");
+    println!("\nSidewalk_mask Guidance:");
     println!("{}", guidance);
     let guidance = analyze_road_mask(highway_mask, mask_analysis_width, mask_analysis_height);
-    println!("\nNavigation Guidance:");
+    println!("\nHighway_mask Guidance:");
     println!("{}", guidance);
     // --- End Mask Analysis ---
 
     Ok(())
 }
 
-fn describe_position(result: &YoloDetectResult, class: &str, width: f32, height: f32) -> String {
-    // Compute center x for direction
-    let x_center = result.x + result.width / 2.0;
-    // Compute bottom y for distance
-    let y_bottom = result.y + result.height;
-    // Normalize coordinates
-    let x_norm = x_center / width;
-    let y_norm = y_bottom / height;
-    // Get direction and distance
-    let direction = get_direction(x_norm);
-    let distance = get_distance(y_norm);
-    // Special phrasing for "very close"
-    if distance == "very close" {
-        format!("the {} is under your feet at {}", class, direction)
+fn get_distance(normalized_y: f32) -> String {
+    // normalized_y is 0.0 (top/far) to 1.0 (bottom/near)
+    if normalized_y > 0.8 {
+        "very near".to_string()
+    } else if normalized_y > 0.5 {
+        "near".to_string()
+    } else if normalized_y > 0.2 {
+        "mid-distance".to_string()
     } else {
-        format!("the {} is {} at {}", class, distance, direction)
+        "far".to_string()
     }
 }
 
-fn get_distance(y_norm: f32) -> String {
-    if y_norm > 0.8 {
-        "very close"
-    } else if y_norm > 0.6 {
-        "relatively close"
-    } else if y_norm > 0.4 {
-        "near"
+fn get_direction(normalized_x: f32) -> String {
+    // normalized_x is 0.0 (left) to 1.0 (right)
+    if normalized_x < 0.3 {
+        "to your left".to_string()
+    } else if normalized_x > 0.7 {
+        "to your right".to_string()
     } else {
-        "far"
+        "ahead".to_string()
     }
-    .to_string()
 }
 
-fn get_direction(x_norm: f32) -> String {
-    // Map x_norm (0 to 1) to hours from 9 to 15 (where 15 ≡ 3 o'clock)
-    let h_raw = 9.0 + x_norm * 6.0;
-    // Adjust hours > 12 to clock range (13 → 1, 14 → 2, 15 → 3)
-    let h = if h_raw > 12.0 { h_raw - 12.0 } else { h_raw };
-    let hour = h.round() as i32;
-    match hour {
-        9 => "9 o'clock",
-        10 => "10 o'clock",
-        11 => "11 o'clock",
-        12 => "12 o'clock",
-        1 => "1 o'clock",
-        2 => "2 o'clock",
-        3 => "3 o'clock",
-        _ => "unknown", // Fallback (shouldn’t occur with 0 ≤ x_norm ≤ 1)
-    }
-    .to_string()
-}
-
-/// Analyzes the combined road mask to determine direction and obstacles.
-///
-/// # Arguments
-/// * `mask_results` - A vector of Results, each potentially containing a BitVec mask.
-/// * `image_width` - The width of the image corresponding to the masks.
-/// * `image_height` - The height of the image corresponding to the masks.
-///
-/// # Returns
-/// * A string describing the road direction and any detected obstacles.
 fn analyze_road_mask(
     mask_results: Vec<Result<BitVec>>,
     image_width: usize,
     image_height: usize,
 ) -> String {
-    // 1. Combine all valid masks using OR logic
+    // 1. Combine all valid masks using OR logic (Same as before)
     let combined_mask = {
         let mut combined_mask = bitvec![0; image_width * image_height];
         let mut valid_mask_count = 0;
@@ -208,12 +158,10 @@ fn analyze_road_mask(
         for result in mask_results {
             match result {
                 Ok(mask) => {
-                    // Ensure the mask has the expected size
                     if mask.len() == image_width * image_height {
                         combined_mask |= mask;
                         valid_mask_count += 1;
                     } else {
-                        // Log or handle size mismatch if necessary
                         info!(
                             "Warning: Mask size mismatch. Expected {}, got {}",
                             image_width * image_height,
@@ -222,33 +170,42 @@ fn analyze_road_mask(
                     }
                 }
                 Err(e) => {
-                    // Log them if needed
                     error!("Error processing mask: {:?}", e);
                 }
             }
         }
 
         if valid_mask_count == 0 || combined_mask.not_any() {
-            // combined_mask.not_any() checks if all bits are false
             return "No clear sidewalk path detected.".to_string();
         }
-
         combined_mask
     };
 
-    // 2. Analyze Shape for Direction and Continuity for Obstacles
-    let num_sections = 5; // Divide the height into sections (e.g., near, mid-near, middle, mid-far, far)
-    let section_height = image_height / num_sections;
+    let path_at_feet = {
+        // --- Add Center Check ---
+        let center_x = image_width / 2;
+        let center_y = image_height / 2;
+        let center_index = center_y * image_width + center_x;
+        // Check if the center pixel index is within the mask bounds and if it's set to true
+        if center_index < combined_mask.len() {
+            combined_mask[center_index]
+        } else {
+            false // Should not happen if mask size is correct, treat as no path if out of bounds
+        }
+        // --- End Center Check ---
+    };
+
+    // 2. Analyze Shape: Calculate Section Centroids and Detect Obstacles
+    let num_sections = 5;
+    let section_height = image_height as f64 / num_sections as f64; // Use f64 for precision
     let mut centroids_x = vec![0.0; num_sections];
     let mut pixel_counts = vec![0; num_sections];
-    let mut obstacles: Vec<(usize, usize)> = Vec::new(); // Store obstacle (y, x) coordinates
-
-    // Define a threshold for detecting a significant gap (e.g., % of image width)
-    let gap_threshold = (image_width as f32 * 0.1) as usize; // Obstacle if gap is > 10% of image width
+    let mut obstacles: Vec<(usize, usize)> = Vec::new();
+    let gap_threshold = (image_width as f32 * 0.1) as usize;
 
     for s in 0..num_sections {
-        let y_start = s * section_height;
-        let y_end = ((s + 1) * section_height).min(image_height);
+        let y_start = (s as f64 * section_height).round() as usize;
+        let y_end = (((s + 1) as f64 * section_height).round() as usize).min(image_height);
         let mut section_sum_x: u64 = 0;
         let mut section_count: u64 = 0;
 
@@ -260,34 +217,35 @@ fn analyze_road_mask(
 
             for x in 0..image_width {
                 let index = y * image_width + x;
-                if combined_mask[index] {
+                // Check bounds just in case, though combined_mask should have the right size
+                if index < combined_mask.len() && combined_mask[index] {
                     row_has_pixels = true;
                     section_sum_x += x as u64;
                     section_count += 1;
                     row_min_x = row_min_x.min(x);
                     row_max_x = row_max_x.max(x);
 
-                    // If we were in a gap, check if it was significant
                     if let Some(start_x) = current_gap_start {
                         let gap_size = x - start_x;
                         if gap_size >= gap_threshold {
-                            // Found a significant gap, record its center
                             obstacles.push((y, start_x + gap_size / 2));
                         }
-                        current_gap_start = None; // Reset gap tracking
+                        current_gap_start = None;
                     }
-                } else {
-                    // If we are within the potential road bounds for this row and encounter false
-                    if row_has_pixels && x > row_min_x && current_gap_start.is_none() {
+                } else if row_has_pixels && x > row_min_x && current_gap_start.is_none() {
+                    // Only start tracking gap *after* finding the first pixel in the row
+                    // and if we are not already tracking a gap.
+                    if index < combined_mask.len() && !combined_mask[index] {
                         current_gap_start = Some(x);
                     }
                 }
             }
-            // Check for a gap extending to the right edge of the detected path
+            // Check for gap extending to the right edge *within the detected path*
             if let Some(start_x) = current_gap_start {
-                if row_max_x >= start_x {
-                    // Ensure the gap is within the detected bounds
-                    let gap_size = row_max_x + 1 - start_x; // Gap size to the end of detected area
+                // Ensure the gap started within or at the edge of the detected path
+                if start_x <= row_max_x {
+                    let gap_end = row_max_x + 1; // Consider the gap extending up to the pixel *after* the last detected one
+                    let gap_size = gap_end.saturating_sub(start_x);
                     if gap_size >= gap_threshold {
                         obstacles.push((y, start_x + gap_size / 2));
                     }
@@ -296,77 +254,136 @@ fn analyze_road_mask(
         }
 
         if section_count > 0 {
-            centroids_x[s] = section_sum_x as f32 / section_count as f32;
+            centroids_x[s] = section_sum_x as f64 / section_count as f64; // Use f64
             pixel_counts[s] = section_count as usize;
         } else {
-            // Handle sections with no pixels - might indicate the road ends or a huge obstacle
-            centroids_x[s] = -1.0; // Sentinel value
+            centroids_x[s] = -1.0; // Sentinel value indicates no path pixels in this section
         }
     }
 
-    // Filter out sections with too few pixels to be reliable
-    let min_pixels_per_section = (image_width * section_height) / 100; // e.g., require at least 1% of section area
-    let valid_centroids: Vec<(usize, f32)> = centroids_x
+    // Filter out sections with too few pixels
+    // Use f64 for calculation, compare usize
+    let min_pixels_per_section = ((image_width as f64 * section_height) / 100.0).round() as usize;
+    let valid_points: Vec<(f64, f64)> = centroids_x // Vec<(y_center, x_centroid)>
         .iter()
         .enumerate()
         .filter(|(i, &cx)| cx >= 0.0 && pixel_counts[*i] > min_pixels_per_section)
-        .map(|(i, &cx)| (i, cx))
+        .map(|(i, &cx)| {
+            // Calculate the y-center of the section
+            let y_center = (i as f64 + 0.5) * section_height;
+            (y_center, cx) // Store as (y, x) pair for regression
+        })
         .collect();
 
-    if valid_centroids.len() < 2 {
-        // Not enough data to determine direction reliably
-        // Check for obstacles found even without clear direction
-        return if let Some((y, x)) = obstacles.first() {
-            let obs_dist = get_distance((*y as f32 + 0.5) / image_height as f32); // Use center of pixel row
-            let obs_dir = get_direction((*x as f32 + 0.5) / image_width as f32); // Use center of gap
-            format!(
-                "Sidewalk path unclear, potential obstacle {} at {}",
-                obs_dist, obs_dir
-            )
-        } else {
-            "Sidewalk path unclear.".to_string()
-        };
-    }
-
-    // Determine direction based on the first (nearest, largest index) and last (farthest, smallest index) valid centroids
-    // Note: Index 0 is farthest (top), index num_sections-1 is nearest (bottom).
-    // We need to reverse this logic slightly: Compare nearest valid section to farthest valid section.
-    let (_near_section_idx, near_centroid_x) = valid_centroids.last().unwrap(); // Nearest section with data
-    let (_far_section_idx, far_centroid_x) = valid_centroids.first().unwrap(); // Farthest section with data
-
-    let centroid_shift = near_centroid_x - far_centroid_x;
-    let normalized_shift = centroid_shift / image_width as f32; // Normalize shift by image width
-
-    let direction_str = if normalized_shift.abs() < 0.05 {
-        // Threshold for straightness (e.g., shift < 5% of width)
-        "straight ahead"
-    } else if normalized_shift > 0.0 {
-        // Near centroid is to the right of far centroid -> path veers right from perspective
-        "veers slightly right" // Or "veers right" if shift is larger
+    // 3. Determine Direction using Linear Regression on Valid Points
+    let direction_str = if valid_points.len() < 2 {
+        // Not enough data points for regression
+        None
     } else {
-        // Near centroid is to the left of far centroid -> path veers left
-        "veers slightly left" // Or "veers left"
+        // Perform linear regression: x = m*y + c
+        // Calculate sums needed for slope m = (n*sum(xy) - sum(x)*sum(y)) / (n*sum(y^2) - (sum(y))^2)
+        // Where our 'x' is centroid_x and 'y' is y_center
+        let n = valid_points.len() as f64;
+        let sum_y: f64 = valid_points.iter().map(|(y, _x)| y).sum();
+        let sum_x: f64 = valid_points.iter().map(|(_y, x)| x).sum();
+        let sum_xy: f64 = valid_points.iter().map(|(y, x)| y * x).sum();
+        let sum_y2: f64 = valid_points.iter().map(|(y, _x)| y * y).sum();
+
+        let denominator = n * sum_y2 - sum_y * sum_y;
+
+        if denominator.abs() < 1e-6 {
+            // Avoid division by zero/very small numbers (happens if all y_centers are the same)
+            // Fallback to comparing the first and last point's x value if y values are identical
+            if let (Some((_, first_x)), Some((_, last_x))) =
+                (valid_points.first(), valid_points.last())
+            {
+                let centroid_shift = last_x - first_x;
+                let normalized_shift = centroid_shift / image_width as f64;
+                if normalized_shift.abs() < 0.05 {
+                    // Threshold for straightness
+                    Some("straight ahead")
+                } else if normalized_shift > 0.0 {
+                    // Last x > First x (moves right as y increases/gets closer) -> Veers Left looking forward
+                    Some("veering slightly left")
+                } else {
+                    // Last x < First x (moves left as y increases/gets closer) -> Veers Right looking forward
+                    Some("veering slightly right")
+                }
+            } else {
+                // Should not happen if valid_points.len() >= 2, but handle defensively
+                None
+            }
+        } else {
+            let slope_m = (n * sum_xy - sum_x * sum_y) / denominator;
+
+            // Define thresholds for slope interpretation (these might need tuning)
+            // Slope m > 0 means x increases as y increases (path comes from left) -> Veers Left looking forward
+            // Slope m < 0 means x decreases as y increases (path comes from right) -> Veers Right looking forward
+            let straight_threshold = 0.1; // Example: change in x is less than 10% of change in y
+
+            if slope_m.abs() < straight_threshold {
+                Some("straight ahead")
+            } else if slope_m > 0.0 {
+                // Path trends left into the distance
+                Some("veering slightly left") // Could add more categories like "sharply left"
+            } else {
+                // Path trends right into the distance
+                Some("veering slightly right") // Could add "sharply right"
+            }
+        }
     };
 
-    // 3. Format Output
-    if obstacles.is_empty() {
+    // 4. Format Output (Similar to before, but using the new direction_str)
+    let base_guidance = match direction_str {
+        None => {
+            // If direction is unclear, still report the nearest obstacle if found
+            if let Some((y, x)) = obstacles.iter().max_by_key(|(y, _)| y) {
+                let obs_dist = get_distance((*y as f32 + 0.5) / image_height as f32);
+                let obs_dir = get_direction((*x as f32 + 0.5) / image_width as f32);
+                format!(
+                    "Sidewalk path unclear, potential obstacle {} at {}",
+                    obs_dist, obs_dir
+                )
+            } else {
+                "Sidewalk path unclear.".to_string()
+            }
+        }
+        Some(direction_str) => {
+            if obstacles.is_empty() {
+                format!(
+                    "The sidewalk path goes {}, no immediate obstacles detected.",
+                    direction_str
+                )
+            } else {
+                // Report the nearest obstacle (largest y value)
+                let nearest_obstacle = obstacles.iter().max_by_key(|(y, _)| y).unwrap(); // Safe unwrap because !obstacles.is_empty()
+                let (obs_y, obs_x) = nearest_obstacle;
+
+                // Normalize coordinates for helper functions
+                let obs_dist_norm = (*obs_y as f32 + 0.5) / image_height as f32;
+                let obs_dir_norm = (*obs_x as f32 + 0.5) / image_width as f32;
+
+                let obs_dist = get_distance(obs_dist_norm);
+                let obs_dir = get_direction(obs_dir_norm);
+
+                format!(
+                    "The sidewalk path goes {}, watch out for an obstacle {} at {}",
+                    direction_str, obs_dist, obs_dir
+                )
+            }
+        }
+    };
+
+    // Prepend the warning if no path was detected at the very bottom
+    if !path_at_feet {
+        // We already handled the case where *no* path was detected at all earlier.
+        // This warning applies when a path exists but doesn't reach the bottom.
         format!(
-            "The sidewalk path goes {}, no immediate obstacles detected.",
-            direction_str
+            "Warning: No path detected immediately underfoot. {}",
+            base_guidance
         )
     } else {
-        // Report the nearest obstacle first
-        // Obstacles are stored (y, x). Larger y means closer.
-        let nearest_obstacle = obstacles.iter().max_by_key(|(y, _)| y).unwrap();
-        let (obs_y, obs_x) = nearest_obstacle;
-
-        let obs_dist = get_distance((*obs_y as f32 + 0.5) / image_height as f32); // Use center of pixel row
-        let obs_dir = get_direction((*obs_x as f32 + 0.5) / image_width as f32); // Use center of gap
-
-        format!(
-            "The sidewalk path goes {}, watch out for an obstacle {} at {}",
-            direction_str, obs_dist, obs_dir
-        )
+        base_guidance // Return the standard guidance if path reaches the bottom
     }
 }
 
