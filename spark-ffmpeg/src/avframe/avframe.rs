@@ -4,7 +4,7 @@ use crate::ffi::{
     av_image_fill_arrays,
 };
 use crate::ffi_enum::AVPixelFormat;
-use crate::{CloneFrom, DeepClone};
+use crate::DeepClone;
 use anyhow::{anyhow, Result};
 
 impl AVFrame {
@@ -70,7 +70,7 @@ impl AVFrame {
 
 impl DeepClone for AVFrame {
     fn deep_clone(&self) -> Result<Self> {
-        let mut new = AVFrame::new()?;
+        let new = AVFrame::new()?;
         let (new_ref, old_ref) = unsafe { (&mut *new.inner, &*self.inner) };
 
         new_ref.format = old_ref.format;
