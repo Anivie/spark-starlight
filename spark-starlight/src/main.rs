@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     let path = "./data/image/d4.jpg";
     let image = Image::open_file(path)?;
 
-    let results = yolo.inference_yolo(image, 0.25)?;
+    let results = yolo.inference_yolo(image.clone(), 0.25)?;
     info!("detect results: {:?}", results.len());
 
     let result_highway = results
@@ -58,7 +58,6 @@ fn main() -> Result<()> {
     info!("yolo highway result: {:?}", result_highway);
     info!("yolo sidewalk result: {:?}", result_sidewalk);
 
-    let image = Image::open_file(path)?;
     let result = sam2.encode_image(image)?;
 
     let highway_mask = result_highway
@@ -395,9 +394,9 @@ fn debug() -> Result<()> {
     let sam2 = SAMImageInferenceSession::new("./data/model/other4")?;
 
     let path = "./data/image/d4.jpg";
-    let image = Image::open_file(path)?;
+    let mut image = Image::open_file(path)?;
 
-    let results = yolo.inference_yolo(image, 0.25)?;
+    let results = yolo.inference_yolo(image.clone(), 0.25)?;
     println!("results: {:?}", results.len());
 
     let result_highway = results
@@ -414,10 +413,8 @@ fn debug() -> Result<()> {
     println!("highway: {:?}", result_highway);
     println!("sidewalk: {:?}", result_sidewalk);
 
-    let image = Image::open_file(path)?;
-    let result = sam2.encode_image(image)?;
+    let result = sam2.encode_image(image.clone())?;
 
-    let mut image = Image::open_file(path)?;
     let (image_w, image_h) = image.get_size();
     let mut filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
         .add_context("scale", "1024:1024")?

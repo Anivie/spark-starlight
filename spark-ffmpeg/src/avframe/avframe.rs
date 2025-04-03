@@ -1,7 +1,10 @@
 use crate::avframe::AVFrame;
-use crate::ffi::{av_frame_alloc, av_image_alloc, av_image_copy, av_image_fill_arrays};
+use crate::ffi::{
+    av_frame_alloc, av_frame_copy, av_frame_copy_props, av_frame_get_buffer, av_image_alloc,
+    av_image_fill_arrays,
+};
 use crate::ffi_enum::AVPixelFormat;
-use crate::DeepClone;
+use crate::{CloneFrom, DeepClone};
 use anyhow::{anyhow, Result};
 
 impl AVFrame {
@@ -70,18 +73,24 @@ impl DeepClone for AVFrame {
         let mut new = AVFrame::new()?;
         let (new_ref, old_ref) = unsafe { (&mut *new.inner, &*self.inner) };
 
-        new_ref.clone_from(old_ref);
-        new.alloc_image(AVPixelFormat::try_from(self.format)?)?;
+        new_ref.format = old_ref.format;
+        new_ref.width = old_ref.width;
+        new_ref.height = old_ref.height;
+        new_ref.nb_samples = old_ref.nb_samples;
 
-        unsafe {
-            av_image_copy(
-                new_ref.data.as_ptr().cast_mut(),
-                new_ref.linesize.as_ptr().cast_mut(),
-                old_ref.data.as_ptr().cast(),
-                old_ref.linesize.as_ptr(),
-                AVPixelFormat::try_from(old_ref.format)? as i32,
-                old_ref.width,
-                old_ref.height,
+        ffmpeg! {
+            av_frame_get_buffer(new_ref as *mut crate::ffi::AVFrame, 32)
+        }
+        ffmpeg! {
+            av_frame_copy(
+                new_ref as *mut crate::ffi::AVFrame,
+                old_ref as *const crate::ffi::AVFrame
+            )
+        }
+        ffmpeg! {
+            av_frame_copy_props(
+                new_ref as *mut crate::ffi::AVFrame,
+                old_ref as *const crate::ffi::AVFrame
             )
         }
 

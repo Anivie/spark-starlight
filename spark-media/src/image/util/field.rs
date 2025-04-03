@@ -15,13 +15,10 @@ impl Image {
 
     pub(crate) fn try_encoder(&mut self, codec_id: Option<AVCodecID>) -> Result<&AVCodecContext> {
         if self.encoder.is_none() {
-            let encoder = AVCodec::new_encoder_with_id(codec_id.unwrap_or_else(|| {
-                self.decoder
-                    .as_ref()
-                    .ok_or(anyhow!("Init encoder need decoder exist."))
-                    .unwrap()
-                    .id()
-            }))?;
+            let id = codec_id
+                .or_else(|| self.decoder.as_ref().and_then(|x| Some(x.id())))
+                .ok_or(anyhow!("Could not find any codec for current image."))?;
+            let encoder = AVCodec::new_encoder_with_id(id)?;
 
             let context = AVCodecContext::from_frame(&encoder, &self.inner.frame, None)?;
             self.encoder = Some(context);
