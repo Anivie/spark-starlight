@@ -9,6 +9,7 @@ use bitvec::bitvec;
 use bitvec::prelude::BitVec;
 use log::{error, info};
 use spark_inference::disable_ffmpeg_logging;
+use spark_inference::external::external_server::{DetectResult, ExternalServer, ServerInput};
 use spark_inference::inference::sam::image_inference::{
     SAMImageInferenceSession, SamImageInference,
 };
@@ -28,6 +29,35 @@ fn log_init() {
         // .set_format(Format::LevelFlag | Format::Time | Format::ShortFileName)  // Defines structured log output with chosen details
         // .set_cutmode_by_size("tklogsize.txt", 1<<20, 10, true)  // Cuts logs by file size (1 MB), keeps 10 backups, compresses backups
         .uselog(); // Customizes log output format; default is "{level}{time} {file}:{message}"
+}
+
+#[tokio::main]
+pub async fn maind() -> Result<()> {
+    let path = "./data/image/d4.jpg";
+    let mut image = Image::open_file(path)?;
+    let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
+        .add_context("scale", "1024:1024")?
+        .add_context("format", "rgb24")?
+        .build()?;
+    image.apply_filter(&filter)?;
+    let data = image.raw_data()?;
+
+    let yolo_detect_result = DetectResult {
+        x: 230.1,
+        y: 153.2,
+        width: 500f32,
+        height: 300f32,
+    };
+    let server_input = ServerInput {
+        image: &data,
+        detect_result: vec![yolo_detect_result],
+    };
+
+    let external = ExternalServer::new()
+        .await
+        .expect("Failed to create external server");
+    external.request(server_input).await.unwrap();
+    Ok(())
 }
 
 fn main() -> Result<()> {
