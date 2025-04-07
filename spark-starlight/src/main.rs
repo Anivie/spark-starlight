@@ -31,36 +31,7 @@ fn log_init() {
         .uselog(); // Customizes log output format; default is "{level}{time} {file}:{message}"
 }
 
-#[tokio::main]
-pub async fn maind() -> Result<()> {
-    let path = "./data/image/d4.jpg";
-    let mut image = Image::open_file(path)?;
-    let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
-        .add_context("scale", "1024:1024")?
-        .add_context("format", "rgb24")?
-        .build()?;
-    image.apply_filter(&filter)?;
-    let data = image.raw_data()?;
-
-    let yolo_detect_result = DetectResult {
-        x: 230.1,
-        y: 153.2,
-        width: 500f32,
-        height: 300f32,
-    };
-    let server_input = ServerInput {
-        image: &data,
-        detect_result: vec![yolo_detect_result],
-    };
-
-    let external = ExternalServer::new()
-        .await
-        .expect("Failed to create external server");
-    external.request(server_input).await.unwrap();
-    Ok(())
-}
-
-fn mains() -> Result<()> {
+fn main() -> Result<()> {
     log_init();
     disable_ffmpeg_logging();
 
@@ -211,7 +182,6 @@ fn analyze_road_mask(
     };
 
     let path_at_feet = {
-        // --- Add Center Check ---
         let center_x = image_width / 2;
         let center_y = image_height / 2;
         let center_index = center_y * image_width + center_x;
@@ -221,7 +191,6 @@ fn analyze_road_mask(
         } else {
             false // Should not happen if mask size is correct, treat as no path if out of bounds
         }
-        // --- End Center Check ---
     };
 
     // 2. Analyze Shape: Calculate Section Centroids and Detect Obstacles
@@ -416,14 +385,14 @@ fn analyze_road_mask(
     }
 }
 
-fn main() -> Result<()> {
+fn debug() -> Result<()> {
     // log_init();
     disable_ffmpeg_logging();
 
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
 
-    let path = "./data/image/d4.jpg";
+    let path = "./data/image/c.jpg";
     let mut image = Image::open_file(path)?;
 
     let results = yolo.inference_yolo(image.clone(), 0.25)?;
