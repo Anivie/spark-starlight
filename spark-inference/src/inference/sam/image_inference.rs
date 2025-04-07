@@ -3,7 +3,7 @@ use crate::inference::sam::SamEncoderOutput;
 use crate::utils::graph::SamPrompt;
 use crate::utils::tensor::linear_interpolate;
 use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bitvec::prelude::*;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
 use log::info;
@@ -17,6 +17,7 @@ use parking_lot::{Mutex, RwLock};
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
 use std::collections::HashMap;
+use std::io::Write;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{Arc, LazyLock};
@@ -81,17 +82,18 @@ impl SamImageInference for SAMImageInferenceSession {
         encoded_result: &SamEncoderOutput,
     ) -> Result<BitVec> {
         let mask_decoder_output = self.inference_image_decoder(
-            encoded_result.origin_size,
-            encoded_result.encoder_output["image_embeddings"]
+            encoded_result.encoder_output["image_embed"]
                 .try_extract_array::<f32>()?
                 .into_dimensionality::<Ix4>()?,
-            encoded_result.encoder_output["high_res_features1"]
+            encoded_result.encoder_output["high_res_feats_0"]
                 .try_extract_array::<f32>()?
                 .into_dimensionality::<Ix4>()?,
-            encoded_result.encoder_output["high_res_features2"]
+            encoded_result.encoder_output["high_res_feats_1"]
                 .try_extract_array::<f32>()?
                 .into_dimensionality::<Ix4>()?,
             &prompt,
+            encoded_result.origin_size,
+            output_size,
         )?;
 
         let pred_mask = mask_decoder_output["masks"].try_extract_array::<f32>()?;
@@ -100,38 +102,20 @@ impl SamImageInference for SAMImageInferenceSession {
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .unwrap()
+            .ok_or(anyhow!("No max index found"))?
             .0;
 
-        let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
-        let pred_mask = pred_mask.into_shape_with_order((640, 640))?.to_owned();
-        let pred_mask = if let Some(size) = output_size {
-            info!("Resizing mask from 640x640 to {}x{}", size.0, size.1);
-            linear_interpolate(pred_mask, (size.0 as usize, size.1 as usize))
-        } else if encoded_result.origin_size.0 != 640 || encoded_result.origin_size.1 != 640 {
-            info!(
-                "Resizing mask from 640x640 to {}x{}",
-                encoded_result.origin_size.0, encoded_result.origin_size.1
-            );
-            linear_interpolate(
-                pred_mask,
-                (
-                    encoded_result.origin_size.0 as usize,
-                    encoded_result.origin_size.1 as usize,
-                ),
-            )
-        } else {
-            pred_mask
-        };
-        info!("now pred_mask shape: {:?}", pred_mask.shape());
-
         let back = {
+            let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
+            let pred_mask = pred_mask.into_dimensionality::<Ix2>()?;
+
             let mut back = BitVec::with_capacity(pred_mask.len());
             pred_mask.iter().for_each(|x| {
                 back.push(*x > 0f32);
             });
             back
         };
+
         Ok(back)
     }
 }
@@ -181,7 +165,7 @@ impl SAMImageInferenceSession {
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
                     Shape::new([1, 3, 1024, 1024]),
                 )?;
-                image_encoder.run(vec![("input", SessionInputValue::from(tensor))])?
+                image_encoder.run(vec![("image", SessionInputValue::from(tensor))])?
             },
         };
 
@@ -195,13 +179,13 @@ impl SAMImageInferenceSession {
 
     fn inference_image_decoder(
         &self,
-        image_size: (i32, i32),
-
         feats: ArrayView4<f32>,
         feat0: ArrayView4<f32>,
         feat1: ArrayView4<f32>,
 
         prompt: &SamPrompt<f32>,
+        image_size: (i32, i32),
+        output_size: Option<(i32, i32)>,
     ) -> Result<HashMap<String, DynValue>> {
         let mask_input = Array4::<f32>::zeros((1, 1, 256, 256));
 
@@ -244,18 +228,20 @@ impl SAMImageInferenceSession {
             SamPrompt::Both(_, _) => trans_prompt.into_shape_with_order((1, 3, 2))?,
         };
 
+        let image_size = output_size.unwrap_or(image_size);
+
         let mut decoder = self.image_decoder.lock();
         let result = decoder.run(inputs![
-            "image_embeddings"      => TensorRef::from_array_view(feats)?,
-            "high_res_features1"    => TensorRef::from_array_view(feat0)?,
-            "high_res_features2"    => TensorRef::from_array_view(feat1)?,
+            "image_embed"      => TensorRef::from_array_view(feats)?,
+            "high_res_feats_0"    => TensorRef::from_array_view(feat0)?,
+            "high_res_feats_1"    => TensorRef::from_array_view(feat1)?,
 
             "point_coords"          => Tensor::from_array(prompt_out)?,
             "point_labels"          => Tensor::from_array(point_labels)?,
             "mask_input"            => Tensor::from_array(mask_input)?,
             "has_mask_input"        => Tensor::from_array(array![0_f32])?,
 
-            "orig_im_size"          => Tensor::from_array(array![640i64, 640i64])?,
+            "orig_im_size"          => Tensor::from_array(array![image_size.0, image_size.1])?,
         ])?;
 
         let result = result
