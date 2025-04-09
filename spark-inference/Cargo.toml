@@ -13,7 +13,7 @@ uuid = { version = "1.16.0", features = ["v4"] }
 
 anyhow = "1.0.97"
 
-cudarc = { version = "0.13.9", features = ["cuda-version-from-build-system", "cudnn"] }
+cudarc = { version = "0.13.9", features = ["cuda-version-from-build-system"] }
 parking_lot = { version = "0.12", features = ["nightly"] }
 zenoh = { version = "1.3.0", features = ["shared-memory"] }
 

@@ -5,11 +5,8 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use anyhow::Result;
-use bitvec::bitvec;
 use bitvec::prelude::BitVec;
-use log::{error, info};
 use spark_inference::disable_ffmpeg_logging;
-use spark_inference::external::external_server::{DetectResult, ExternalServer, ServerInput};
 use spark_inference::inference::sam::image_inference::{
     SAMImageInferenceSession, SamImageInference,
 };
@@ -21,7 +18,8 @@ use spark_inference::utils::graph::SamPrompt;
 use spark_inference::utils::masks::ApplyMask;
 use spark_media::filter::filter::AVFilter;
 use spark_media::{Image, RGB};
-use tklog::{Format, LEVEL, LOG};
+use std::fmt::{Display, Formatter};
+use tklog::{LEVEL, LOG};
 
 fn log_init() {
     LOG.set_console(true) // Enables console logging
@@ -32,368 +30,15 @@ fn log_init() {
 }
 
 fn main() -> Result<()> {
-    log_init();
-    disable_ffmpeg_logging();
-
-    let yolo = YoloDetectSession::new("./data/model")?;
-    let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
-
-    let path = "./data/image/d4.jpg";
-    let image = Image::open_file(path)?;
-
-    let results = yolo.inference_yolo(image.clone(), 0.25)?;
-    info!("detect results: {:?}", results.len());
-
-    let result_highway = results
-        .clone()
-        .into_iter()
-        .filter(|result| result.score[0] >= 0.8)
-        .collect::<Vec<_>>();
-    let result_sidewalk = results
-        .into_iter()
-        .filter(|result| result.score[1] >= 0.4)
-        .collect::<Vec<_>>();
-    let result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
-    let result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
-
-    info!("yolo highway result: {:?}", result_highway);
-    info!("yolo sidewalk result: {:?}", result_sidewalk);
-
-    let result = sam2.encode_image(image)?;
-
-    let highway_mask = result_highway
-        .into_iter()
-        .map(|yolo| {
-            sam2.inference_frame(
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
-                ),
-                Some((1024, 1024)),
-                &result,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let sidewalk_mask = result_sidewalk
-        .into_iter()
-        .map(|yolo| {
-            sam2.inference_frame(
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
-                ),
-                Some((1024, 1024)),
-                &result,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    // --- Analyze Sidewalk Mask ---
-    // IMPORTANT: Ensure the mask size (e.g., 1024x1024) matches the width/height passed here.
-    // If SAM outputs masks at a different resolution (like 1024x1024) than the original image,
-    // you MUST either:
-    // 1. Resize the masks to match the original image dimensions OR
-    // 2. Pass the mask dimensions (1024, 1024) to analyze_road_mask instead of image_width, image_height.
-    // Let's assume for now the masks are generated matching the *original* image size or resized appropriately before this step.
-    // If using Some((1024, 1024)) in inference_frame, use 1024, 1024 here.
-    let mask_analysis_width = 1024; // Use the actual width of the masks from SAM
-    let mask_analysis_height = 1024; // Use the actual height of the masks from SAM
-
-    let guidance = analyze_road_mask(sidewalk_mask, mask_analysis_width, mask_analysis_height);
-    println!("\nSidewalk_mask Guidance:");
-    println!("{}", guidance);
-    let guidance = analyze_road_mask(highway_mask, mask_analysis_width, mask_analysis_height);
-    println!("\nHighway_mask Guidance:");
-    println!("{}", guidance);
-    // --- End Mask Analysis ---
-
-    Ok(())
-}
-
-fn get_distance(normalized_y: f32) -> String {
-    // normalized_y is 0.0 (top/far) to 1.0 (bottom/near)
-    if normalized_y > 0.8 {
-        "very near".to_string()
-    } else if normalized_y > 0.5 {
-        "near".to_string()
-    } else if normalized_y > 0.2 {
-        "mid-distance".to_string()
-    } else {
-        "far".to_string()
-    }
-}
-
-fn get_direction(normalized_x: f32) -> String {
-    // normalized_x is 0.0 (left) to 1.0 (right)
-    if normalized_x < 0.3 {
-        "to your left".to_string()
-    } else if normalized_x > 0.7 {
-        "to your right".to_string()
-    } else {
-        "ahead".to_string()
-    }
-}
-
-fn analyze_road_mask(
-    mask_results: Vec<Result<BitVec>>,
-    image_width: usize,
-    image_height: usize,
-) -> String {
-    // 1. Combine all valid masks using OR logic (Same as before)
-    let combined_mask = {
-        let mut combined_mask = bitvec![0; image_width * image_height];
-        let mut valid_mask_count = 0;
-
-        for result in mask_results {
-            match result {
-                Ok(mask) => {
-                    if mask.len() == image_width * image_height {
-                        combined_mask |= mask;
-                        valid_mask_count += 1;
-                    } else {
-                        info!(
-                            "Warning: Mask size mismatch. Expected {}, got {}",
-                            image_width * image_height,
-                            mask.len()
-                        );
-                    }
-                }
-                Err(e) => {
-                    error!("Error processing mask: {:?}", e);
-                }
-            }
-        }
-
-        if valid_mask_count == 0 || combined_mask.not_any() {
-            return "No clear sidewalk path detected.".to_string();
-        }
-        combined_mask
-    };
-
-    let path_at_feet = {
-        let center_x = image_width / 2;
-        let center_y = image_height / 2;
-        let center_index = center_y * image_width + center_x;
-        // Check if the center pixel index is within the mask bounds and if it's set to true
-        if center_index < combined_mask.len() {
-            combined_mask[center_index]
-        } else {
-            false // Should not happen if mask size is correct, treat as no path if out of bounds
-        }
-    };
-
-    // 2. Analyze Shape: Calculate Section Centroids and Detect Obstacles
-    let num_sections = 5;
-    let section_height = image_height as f64 / num_sections as f64; // Use f64 for precision
-    let mut centroids_x = vec![0.0; num_sections];
-    let mut pixel_counts = vec![0; num_sections];
-    let mut obstacles: Vec<(usize, usize)> = Vec::new();
-    let gap_threshold = (image_width as f32 * 0.1) as usize;
-
-    for s in 0..num_sections {
-        let y_start = (s as f64 * section_height).round() as usize;
-        let y_end = (((s + 1) as f64 * section_height).round() as usize).min(image_height);
-        let mut section_sum_x: u64 = 0;
-        let mut section_count: u64 = 0;
-
-        for y in y_start..y_end {
-            let mut row_min_x = image_width;
-            let mut row_max_x = 0;
-            let mut current_gap_start: Option<usize> = None;
-            let mut row_has_pixels = false;
-
-            for x in 0..image_width {
-                let index = y * image_width + x;
-                // Check bounds just in case, though combined_mask should have the right size
-                if index < combined_mask.len() && combined_mask[index] {
-                    row_has_pixels = true;
-                    section_sum_x += x as u64;
-                    section_count += 1;
-                    row_min_x = row_min_x.min(x);
-                    row_max_x = row_max_x.max(x);
-
-                    if let Some(start_x) = current_gap_start {
-                        let gap_size = x - start_x;
-                        if gap_size >= gap_threshold {
-                            obstacles.push((y, start_x + gap_size / 2));
-                        }
-                        current_gap_start = None;
-                    }
-                } else if row_has_pixels && x > row_min_x && current_gap_start.is_none() {
-                    // Only start tracking gap *after* finding the first pixel in the row
-                    // and if we are not already tracking a gap.
-                    if index < combined_mask.len() && !combined_mask[index] {
-                        current_gap_start = Some(x);
-                    }
-                }
-            }
-            // Check for gap extending to the right edge *within the detected path*
-            if let Some(start_x) = current_gap_start {
-                // Ensure the gap started within or at the edge of the detected path
-                if start_x <= row_max_x {
-                    let gap_end = row_max_x + 1; // Consider the gap extending up to the pixel *after* the last detected one
-                    let gap_size = gap_end.saturating_sub(start_x);
-                    if gap_size >= gap_threshold {
-                        obstacles.push((y, start_x + gap_size / 2));
-                    }
-                }
-            }
-        }
-
-        if section_count > 0 {
-            centroids_x[s] = section_sum_x as f64 / section_count as f64; // Use f64
-            pixel_counts[s] = section_count as usize;
-        } else {
-            centroids_x[s] = -1.0; // Sentinel value indicates no path pixels in this section
-        }
-    }
-
-    // Filter out sections with too few pixels
-    // Use f64 for calculation, compare usize
-    let min_pixels_per_section = ((image_width as f64 * section_height) / 100.0).round() as usize;
-    let valid_points: Vec<(f64, f64)> = centroids_x // Vec<(y_center, x_centroid)>
-        .iter()
-        .enumerate()
-        .filter(|(i, &cx)| cx >= 0.0 && pixel_counts[*i] > min_pixels_per_section)
-        .map(|(i, &cx)| {
-            // Calculate the y-center of the section
-            let y_center = (i as f64 + 0.5) * section_height;
-            (y_center, cx) // Store as (y, x) pair for regression
-        })
-        .collect();
-
-    // 3. Determine Direction using Linear Regression on Valid Points
-    let direction_str = if valid_points.len() < 2 {
-        // Not enough data points for regression
-        None
-    } else {
-        // Perform linear regression: x = m*y + c
-        // Calculate sums needed for slope m = (n*sum(xy) - sum(x)*sum(y)) / (n*sum(y^2) - (sum(y))^2)
-        // Where our 'x' is centroid_x and 'y' is y_center
-        let n = valid_points.len() as f64;
-        let sum_y: f64 = valid_points.iter().map(|(y, _x)| y).sum();
-        let sum_x: f64 = valid_points.iter().map(|(_y, x)| x).sum();
-        let sum_xy: f64 = valid_points.iter().map(|(y, x)| y * x).sum();
-        let sum_y2: f64 = valid_points.iter().map(|(y, _x)| y * y).sum();
-
-        let denominator = n * sum_y2 - sum_y * sum_y;
-
-        if denominator.abs() < 1e-6 {
-            // Avoid division by zero/very small numbers (happens if all y_centers are the same)
-            // Fallback to comparing the first and last point's x value if y values are identical
-            if let (Some((_, first_x)), Some((_, last_x))) =
-                (valid_points.first(), valid_points.last())
-            {
-                let centroid_shift = last_x - first_x;
-                let normalized_shift = centroid_shift / image_width as f64;
-                if normalized_shift.abs() < 0.05 {
-                    // Threshold for straightness
-                    Some("straight ahead")
-                } else if normalized_shift > 0.0 {
-                    // Last x > First x (moves right as y increases/gets closer) -> Veers Left looking forward
-                    Some("veering slightly left")
-                } else {
-                    // Last x < First x (moves left as y increases/gets closer) -> Veers Right looking forward
-                    Some("veering slightly right")
-                }
-            } else {
-                // Should not happen if valid_points.len() >= 2, but handle defensively
-                None
-            }
-        } else {
-            let slope_m = (n * sum_xy - sum_x * sum_y) / denominator;
-
-            // Define thresholds for slope interpretation (these might need tuning)
-            // Slope m > 0 means x increases as y increases (path comes from left) -> Veers Left looking forward
-            // Slope m < 0 means x decreases as y increases (path comes from right) -> Veers Right looking forward
-            let straight_threshold = 0.1; // Example: change in x is less than 10% of change in y
-
-            if slope_m.abs() < straight_threshold {
-                Some("straight ahead")
-            } else if slope_m > 0.0 {
-                // Path trends left into the distance
-                Some("veering slightly left") // Could add more categories like "sharply left"
-            } else {
-                // Path trends right into the distance
-                Some("veering slightly right") // Could add "sharply right"
-            }
-        }
-    };
-
-    // 4. Format Output (Similar to before, but using the new direction_str)
-    let base_guidance = match direction_str {
-        None => {
-            // If direction is unclear, still report the nearest obstacle if found
-            if let Some((y, x)) = obstacles.iter().max_by_key(|(y, _)| y) {
-                let obs_dist = get_distance((*y as f32 + 0.5) / image_height as f32);
-                let obs_dir = get_direction((*x as f32 + 0.5) / image_width as f32);
-                format!(
-                    "Sidewalk path unclear, potential obstacle {} at {}",
-                    obs_dist, obs_dir
-                )
-            } else {
-                "Sidewalk path unclear.".to_string()
-            }
-        }
-        Some(direction_str) => {
-            if obstacles.is_empty() {
-                format!(
-                    "The sidewalk path goes {}, no immediate obstacles detected.",
-                    direction_str
-                )
-            } else {
-                // Report the nearest obstacle (largest y value)
-                let nearest_obstacle = obstacles.iter().max_by_key(|(y, _)| y).unwrap(); // Safe unwrap because !obstacles.is_empty()
-                let (obs_y, obs_x) = nearest_obstacle;
-
-                // Normalize coordinates for helper functions
-                let obs_dist_norm = (*obs_y as f32 + 0.5) / image_height as f32;
-                let obs_dir_norm = (*obs_x as f32 + 0.5) / image_width as f32;
-
-                let obs_dist = get_distance(obs_dist_norm);
-                let obs_dir = get_direction(obs_dir_norm);
-
-                format!(
-                    "The sidewalk path goes {}, watch out for an obstacle {} at {}",
-                    direction_str, obs_dist, obs_dir
-                )
-            }
-        }
-    };
-
-    // Prepend the warning if no path was detected at the very bottom
-    if !path_at_feet {
-        // We already handled the case where *no* path was detected at all earlier.
-        // This warning applies when a path exists but doesn't reach the bottom.
-        format!(
-            "Warning: No path detected immediately underfoot. {}",
-            base_guidance
-        )
-    } else {
-        base_guidance // Return the standard guidance if path reaches the bottom
-    }
-}
-
-fn debug() -> Result<()> {
     // log_init();
     disable_ffmpeg_logging();
 
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
 
-    let path = "./data/image/c.jpg";
+    let path = "./data/image/d4.jpg";
     let mut image = Image::open_file(path)?;
+    let sam_image = image.clone();
 
     let results = yolo.inference_yolo(image.clone(), 0.25)?;
     println!("results: {:?}", results.len());
@@ -411,8 +56,6 @@ fn debug() -> Result<()> {
     let result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
     println!("highway: {:?}", result_highway);
     println!("sidewalk: {:?}", result_sidewalk);
-
-    let result = sam2.encode_image(image.clone())?;
 
     let (image_w, image_h) = image.get_size();
     let mut filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
@@ -441,58 +84,661 @@ fn debug() -> Result<()> {
     }
     image.apply_filter(&filter.build()?)?;
 
-    println!("image size: {:?}", image.get_size());
-    let highway_mask = result_highway
-        .into_iter()
+    let result_highway = result_highway
+        .iter()
         .map(|yolo| {
-            sam2.inference_frame(
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
+            SamPrompt::both(
+                (
+                    yolo.x - yolo.width / 2.0,
+                    yolo.y - yolo.height / 2.0,
+                    yolo.x + yolo.width / 2.0,
+                    yolo.y + yolo.height / 2.0,
                 ),
-                Some((1024, 1024)),
-                &result,
+                (yolo.x, yolo.y),
             )
         })
         .collect::<Vec<_>>();
-    println!("highway_mask: {:?}", highway_mask.len());
 
-    let sidewalk_mask = result_sidewalk
-        .into_iter()
+    let result_sidewalk = result_sidewalk
+        .iter()
         .map(|yolo| {
-            sam2.inference_frame(
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
+            SamPrompt::both(
+                (
+                    yolo.x - yolo.width / 2.0,
+                    yolo.y - yolo.height / 2.0,
+                    yolo.x + yolo.width / 2.0,
+                    yolo.y + yolo.height / 2.0,
                 ),
-                Some((1024, 1024)),
-                &result,
+                (yolo.x, yolo.y),
             )
         })
         .collect::<Vec<_>>();
-    println!("sidewalk_mask: {:?}", sidewalk_mask.len());
 
-    for x in highway_mask {
-        if let Ok(mask) = x {
-            image.layering_mask(&mask, RGB(75, 0, 0))?;
-        }
+    let mask = sam2.inference_frame(sam_image, vec![result_highway, result_sidewalk])?;
+
+    for x in &mask[0] {
+        image.layering_mask(&x, RGB(75, 0, 0))?;
     }
-    for x in sidewalk_mask {
-        if let Ok(mask) = x {
-            image.layering_mask(&mask, RGB(0, 0, 75))?;
-        }
+    for x in &mask[1] {
+        image.layering_mask(&x, RGB(0, 0, 75))?;
     }
+
     image.save_with_format("./data/out/a_out.png")?;
 
     Ok(())
+}
+/*
+fn mains() -> Result<()> {
+    log_init();
+    disable_ffmpeg_logging();
+
+    let yolo = YoloDetectSession::new("./data/model")?;
+    let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
+
+    let path = "./data/image/d4.jpg";
+    let image = Image::open_file(path)?;
+    let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
+
+    let results = yolo.inference_yolo(image.clone(), 0.25)?;
+    info!("detect results: {:?}", results.len());
+
+    let result_highway = results
+        .clone()
+        .into_iter()
+        .filter(|result| result.score[0] >= 0.8)
+        .collect::<Vec<_>>();
+    let result_sidewalk = results
+        .into_iter()
+        .filter(|result| result.score[1] >= 0.4)
+        .collect::<Vec<_>>();
+    let mut result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
+    let mut result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
+
+    info!("yolo highway result: {:?}", result_highway);
+    info!("yolo sidewalk result: {:?}", result_sidewalk);
+
+    let result = sam2.encode_image(image)?;
+
+    let highway_mask = result_highway
+        .iter()
+        .map(|yolo| {
+            sam2.inference_frame(
+                SamPrompt::both(
+                    (
+                        yolo.x - yolo.width / 2.0,
+                        yolo.y - yolo.height / 2.0,
+                        yolo.x + yolo.width / 2.0,
+                        yolo.y + yolo.height / 2.0,
+                    ),
+                    (yolo.x, yolo.y),
+                ),
+                &result,
+            )
+        })
+        .filter_map(|x| {
+            match x {
+                Ok(mask) => Some(mask),
+                Err(e) => {
+                    error!("Error processing mask: {}", e);
+                    None
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let sidewalk_mask = result_sidewalk
+        .iter()
+        .map(|yolo| {
+            sam2.inference_frame(
+                SamPrompt::both(
+                    (
+                        yolo.x - yolo.width / 2.0,
+                        yolo.y - yolo.height / 2.0,
+                        yolo.x + yolo.width / 2.0,
+                        yolo.y + yolo.height / 2.0,
+                    ),
+                    (yolo.x, yolo.y),
+                ),
+                &result,
+            )
+        })
+        .filter_map(|x| {
+            match x {
+                Ok(mask) => Some(mask),
+                Err(e) => {
+                    error!("Error processing mask: {}", e);
+                    None
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    println!("--- Sidewalk Detections ---");
+    describe_anchor_points(
+        &result_sidewalk,
+        image_width,
+        image_height,
+        "Sidewalk"
+    )
+        .iter()
+        .for_each(|desc| println!("{}", desc));
+
+    println!("\n--- Highway Detections ---");
+    describe_anchor_points(
+        &result_highway,
+        image_width,
+        image_height,
+        "Highway"
+    )
+        .iter()
+        .for_each(|desc| println!("{}", desc));
+
+    println!("--- Analyzing Highway ---");
+    highway_mask
+        .iter()
+        .for_each(|x| {
+            let result_straight = analyze_road_mask(x, image_width, image_height, "Highway");
+            println!("Starts at feet: {}", result_straight.starts_at_feet);
+            println!("Shape: {:?}", result_straight.shape);
+            println!("Obstacles: {:?}", result_straight.obstacles);
+            println!("Description: {}", result_straight.description);
+        });
+
+    println!("\n--- Analyzing Sidewalk ---");
+    sidewalk_mask
+        .iter()
+        .for_each(|x| {
+            let result_curve_gap = analyze_road_mask(x, image_width, image_height, "Sidewalk");
+            println!("Starts at feet: {}", result_curve_gap.starts_at_feet);
+            println!("Shape: {:?}", result_curve_gap.shape);
+            println!("Obstacles: {:?}", result_curve_gap.obstacles);
+            println!("Description: {}", result_curve_gap.description);
+        });
+
+    Ok(())
+}
+*/
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+enum DirectionCategory {
+    Clock(String),
+    Unknown,
+}
+
+impl Display for DirectionCategory {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DirectionCategory::Clock(s) => write!(f, "{} direction", s),
+            DirectionCategory::Unknown => write!(f, "Unknown direction"),
+        }
+    }
+}
+
+// Enum for distance categories for better code readability
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+enum DistanceCategory {
+    VeryNear, // e.g., At your feet
+    RelativelyNear,
+    Near, // Mid-range
+    Far,
+    Unknown, // Error case
+}
+
+// Implement Display trait for easy conversion to String
+impl Display for DistanceCategory {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DistanceCategory::VeryNear => write!(f, "Very near"),
+            DistanceCategory::RelativelyNear => write!(f, "Relatively near"),
+            DistanceCategory::Near => write!(f, "Near"),
+            DistanceCategory::Far => write!(f, "Far"),
+            DistanceCategory::Unknown => write!(f, "Unknown distance"),
+        }
+    }
+}
+
+/// Calculates the perceived distance of an anchor point based on its y-coordinate.
+/// Considers perspective (lower y in image means closer to the viewer).
+///
+/// Args:
+///     y (f32): The y-coordinate of the anchor point (center of the bounding box).
+///     image_height (u32): The total height of the image frame in pixels.
+///
+/// Returns:
+///     DistanceCategory: The perceived distance category.
+fn get_distance(y: f32, image_height: u32) -> DistanceCategory {
+    if image_height == 0 {
+        eprintln!("Error: Image height cannot be zero.");
+        return DistanceCategory::Unknown;
+    }
+
+    // Normalize y coordinate to the range [0.0, 1.0]
+    // 0.0 is the top of the image (far), 1.0 is the bottom (near).
+    // Clamp to ensure it stays within bounds.
+    let normalized_y = (y / image_height as f32).max(0.0).min(1.0);
+
+    // Define thresholds for distance categories. These may need tuning.
+    // Higher normalized_y means closer to the bottom edge of the frame (nearer).
+    if normalized_y > 0.85 {
+        // Bottom 15% of the image height
+        DistanceCategory::VeryNear // "At your feet" can also be used
+    } else if normalized_y > 0.60 {
+        // Roughly between 60% and 85% down the frame
+        DistanceCategory::RelativelyNear
+    } else if normalized_y > 0.35 {
+        // Roughly between 35% and 60% down the frame
+        DistanceCategory::Near
+    } else {
+        // Top 35% of the image height
+        DistanceCategory::Far
+    }
+}
+
+// Assume get_direction function is available (copied here for completeness)
+fn get_direction(x: f32, image_width: u32) -> DirectionCategory {
+    if image_width == 0 {
+        return DirectionCategory::Unknown;
+    }
+    let normalized_x = (x / image_width as f32).max(0.0).min(1.0);
+    let index = (normalized_x * 12.0).round() as usize;
+    let index = index.min(12);
+    let clock_str = match index {
+        0 => "9 o'clock",
+        1 => "9:30",
+        2 => "10 o'clock",
+        3 => "10:30",
+        4 => "11 o'clock",
+        5 => "11:30",
+        6 => "12 o'clock",
+        7 => "12:30",
+        8 => "1 o'clock",
+        9 => "1:30",
+        10 => "2 o'clock",
+        11 => "2:30",
+        12 => "3 o'clock",
+        _ => return DirectionCategory::Unknown,
+    };
+    DirectionCategory::Clock(clock_str.to_string())
+}
+
+// --- New Structs and Enums for Mask Analysis ---
+
+#[derive(Debug, Clone)]
+struct CenterlinePoint {
+    y: u32,        // Vertical position (pixel row)
+    center_x: f32, // Horizontal center of the mask at this row
+    width: u32,    // Width of the mask at this row
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum RoadShape {
+    Straight,
+    CurvesLeft, // Extends towards the left in the distance (drifts right as it gets closer)
+    CurvesRight, // Extends towards the right in the distance (drifts left as it gets closer)
+    Undetermined, // Not enough data or too complex
+}
+
+#[derive(Debug, Clone)]
+struct ObstacleInfo {
+    y: u32,         // Approximate vertical position of the obstacle
+    center_x: f32,  // Approximate horizontal position
+    reason: String, // e.g., "Gap", "Narrowing"
+}
+
+#[derive(Debug, Clone)]
+pub struct RoadAnalysisResult {
+    pub starts_at_feet: bool,
+    pub shape: RoadShape,
+    pub obstacles: Vec<ObstacleInfo>,
+    pub description: String, // Generated textual summary
+}
+
+// --- Configuration Constants (Crucial for Tuning!) ---
+const NUM_VERTICAL_SAMPLES: u32 = 20; // How many horizontal slices to analyze
+const MIN_MASK_WIDTH_FOR_CENTER: u32 = 5; // Minimum pixels wide to calculate a center
+const ROAD_START_Y_THRESHOLD: f32 = 0.90; // How close to the bottom (normalized) road should start
+const MIN_CENTERLINE_POINTS_FOR_SHAPE: usize = 5; // Need at least this many points for shape analysis
+const STRAIGHT_ROAD_X_DRIFT_THRESHOLD: f32 = 0.05; // Max normalized horizontal drift for "straight"
+const OBSTACLE_WIDTH_CHANGE_FACTOR: f32 = 0.5; // Significant narrowing if width drops by this factor
+const OBSTACLE_GAP_ROWS_THRESHOLD: u32 = 3; // How many consecutive empty sampled rows indicate a gap
+
+// --- Helper Functions ---
+
+/// Extracts the centerline and width profile of the road mask.
+/// Assumes mask is row-major: index = y * width + x
+fn extract_centerline(mask: &BitVec, image_width: u32, image_height: u32) -> Vec<CenterlinePoint> {
+    let mut centerline = Vec::new();
+    if image_width == 0 || image_height == 0 || mask.is_empty() {
+        return centerline; // Cannot process if dimensions are zero or mask is empty
+    }
+    if mask.len() != (image_width * image_height) as usize {
+        eprintln!(
+            "Warning: Mask length ({}) does not match image dimensions ({}x{}={})",
+            mask.len(),
+            image_width,
+            image_height,
+            image_width * image_height
+        );
+        // Decide how to handle: return empty, panic, or try to proceed? Returning empty is safer.
+        return centerline;
+    }
+
+    let y_step = image_height / (NUM_VERTICAL_SAMPLES + 1); // +1 to avoid sampling very top/bottom edges potentially
+
+    for i in 1..=NUM_VERTICAL_SAMPLES {
+        let y = image_height - i * y_step; // Sample from bottom up (near to far)
+        if y >= image_height {
+            continue;
+        } // Avoid potential index out of bounds on the last step
+
+        let mut min_x: Option<u32> = None;
+        let mut max_x: Option<u32> = None;
+
+        let row_start_index = (y * image_width) as usize;
+
+        // Find the leftmost and rightmost 'true' bits in the current row
+        for x in 0..image_width {
+            let index = row_start_index + x as usize;
+            // Check bounds before accessing mask - Belt and suspenders approach
+            if index < mask.len() && mask[index] {
+                if min_x.is_none() {
+                    min_x = Some(x);
+                }
+                max_x = Some(x);
+            }
+        }
+
+        // If we found a valid segment in this row, calculate center and width
+        if let (Some(min_val), Some(max_val)) = (min_x, max_x) {
+            let width = max_val.saturating_sub(min_val) + 1;
+            if width >= MIN_MASK_WIDTH_FOR_CENTER {
+                let center_x = (min_val + max_val) as f32 / 2.0;
+                centerline.push(CenterlinePoint { y, center_x, width });
+            }
+            // Optional: else { maybe log that a thin segment was ignored }
+        }
+        // Optional: else { maybe log that row 'y' had no mask pixels }
+    }
+
+    // Resulting centerline points are ordered from near (high y) to far (low y)
+    centerline
+}
+
+/// Analyzes the shape (straight, curve left/right) based on centerline points.
+fn analyze_centerline_shape(centerline: &[CenterlinePoint], image_width: u32) -> RoadShape {
+    if centerline.len() < MIN_CENTERLINE_POINTS_FOR_SHAPE {
+        return RoadShape::Undetermined;
+    }
+
+    // Compare the horizontal position of the nearest point to the farthest point
+    // Points are ordered near to far (high y to low y)
+    let nearest_point = &centerline[0];
+    let farthest_point = centerline.last().unwrap(); // Safe due to length check above
+
+    // Calculate horizontal drift, normalized by image width
+    // Positive drift: Farthest point is to the right of the nearest point (relative to image coords)
+    // Negative drift: Farthest point is to the left of the nearest point
+    let normalized_drift = (farthest_point.center_x - nearest_point.center_x) / image_width as f32;
+
+    if normalized_drift.abs() < STRAIGHT_ROAD_X_DRIFT_THRESHOLD {
+        RoadShape::Straight
+    } else if normalized_drift > 0.0 {
+        // Farthest point is right -> Road extends to the right -> Curves Right from user perspective
+        RoadShape::CurvesRight
+    } else {
+        // Farthest point is left -> Road extends to the left -> Curves Left from user perspective
+        RoadShape::CurvesLeft
+    }
+}
+
+/// Detects obstacles like gaps or significant narrowing based on the centerline profile.
+fn detect_obstacles(
+    centerline: &[CenterlinePoint],
+    image_width: u32,
+    image_height: u32, // Needed for gap detection logic potentially
+    mask: &BitVec,     // Needed for more detailed gap check if required
+) -> Vec<ObstacleInfo> {
+    let mut obstacles = Vec::new();
+    if centerline.len() < 2 {
+        // Need at least two points to see changes
+        return obstacles;
+    }
+
+    let mut consecutive_missing_rows = 0;
+    let mut last_sampled_y = image_height; // Start from bottom
+
+    // Check for gaps *between* sampled rows
+    let y_step = image_height / (NUM_VERTICAL_SAMPLES + 1);
+    for i in 1..=NUM_VERTICAL_SAMPLES {
+        let current_y = image_height - i * y_step;
+        let sampled_point_exists = centerline.iter().any(|p| p.y == current_y);
+
+        if sampled_point_exists {
+            consecutive_missing_rows = 0; // Reset gap counter
+        } else {
+            consecutive_missing_rows += 1;
+            if consecutive_missing_rows == OBSTACLE_GAP_ROWS_THRESHOLD {
+                // Found a potential gap. Report it roughly in the middle of the gap.
+                let gap_y = current_y + (OBSTACLE_GAP_ROWS_THRESHOLD / 2) * y_step;
+                // Try to find the center_x from the last valid point before the gap
+                let last_valid_point = centerline.iter().find(|p| p.y > gap_y); // Find point just below the gap
+                let center_x = last_valid_point.map_or(image_width as f32 / 2.0, |p| p.center_x); // Default to center if no prior point
+
+                obstacles.push(ObstacleInfo {
+                    y: gap_y,
+                    center_x,
+                    reason: "Potential gap".to_string(),
+                });
+            }
+        }
+        last_sampled_y = current_y;
+    }
+
+    // Check for significant narrowing by comparing adjacent points in the centerline
+    // Iterate pairwise over centerline points (near to far)
+    for i in 0..(centerline.len() - 1) {
+        let p_near = &centerline[i]; // Point closer to user
+        let p_far = &centerline[i + 1]; // Point farther away
+
+        // Expect width to decrease as we go farther (p_far.width <= p_near.width generally)
+        // An obstacle is suggested if the far point is *significantly* narrower than expected
+        // Simple check: if p_far is much narrower than p_near
+        if (p_far.width as f32) < (p_near.width as f32 * OBSTACLE_WIDTH_CHANGE_FACTOR) {
+            // Check if this obstacle is already captured by a gap report near the same location
+            let y_mid = (p_near.y + p_far.y) / 2;
+            if !obstacles
+                .iter()
+                .any(|obs| obs.reason.contains("gap") && obs.y.abs_diff(y_mid) < y_step)
+            {
+                obstacles.push(ObstacleInfo {
+                    y: p_far.y, // Report obstacle at the location of the narrowing
+                    center_x: p_far.center_x,
+                    reason: "Significant narrowing".to_string(),
+                });
+            }
+        }
+        // Optional: Add check for sudden *widening* if needed
+    }
+
+    obstacles
+}
+
+/// Checks if the road mask starts near the bottom edge of the image.
+fn check_road_start(
+    centerline: &[CenterlinePoint], // Assumes ordered near to far
+    image_height: u32,
+) -> bool {
+    match centerline.first() {
+        Some(nearest_point) => {
+            let normalized_y = nearest_point.y as f32 / image_height as f32;
+            normalized_y >= ROAD_START_Y_THRESHOLD
+        }
+        None => false, // No centerline points found, so doesn't start at feet
+    }
+}
+
+// --- Main Analysis Function ---
+
+/// Analyzes a road mask to determine shape, obstacles, and starting position.
+///
+/// Args:
+///     mask (BitVec): The road mask (row-major).
+///     image_width (u32): Width of the image.
+///     image_height (u32): Height of the image.
+///     object_type_name (str): Name for the object type (e.g., "Highway", "Sidewalk").
+///
+/// Returns:
+///     RoadAnalysisResult: Contains analysis details and a textual description.
+pub fn analyze_road_mask(
+    mask: &BitVec,
+    image_width: u32,
+    image_height: u32,
+    object_type_name: &str,
+) -> RoadAnalysisResult {
+    if image_width == 0
+        || image_height == 0
+        || mask.is_empty()
+        || mask.len() != (image_width * image_height) as usize
+    {
+        return RoadAnalysisResult {
+            starts_at_feet: false,
+            shape: RoadShape::Undetermined,
+            obstacles: vec![],
+            description: format!(
+                "Error: Invalid input mask or dimensions for {}.",
+                object_type_name
+            ),
+        };
+    }
+
+    // 1. Extract Centerline
+    let centerline_points = extract_centerline(mask, image_width, image_height);
+
+    if centerline_points.is_empty() {
+        return RoadAnalysisResult {
+            starts_at_feet: false,
+            shape: RoadShape::Undetermined,
+            obstacles: vec![],
+            description: format!("No significant {} found in the mask.", object_type_name),
+        };
+    }
+
+    // 2. Check Starting Position
+    let starts_at_feet = check_road_start(&centerline_points, image_height);
+
+    // 3. Analyze Shape
+    let shape = analyze_centerline_shape(&centerline_points, image_width);
+
+    // 4. Detect Obstacles
+    let obstacles = detect_obstacles(&centerline_points, image_width, image_height, mask);
+
+    // 5. Generate Description
+    let mut description_parts = Vec::new();
+
+    // Start position warning
+    if !starts_at_feet {
+        // Find the y-coordinate of the nearest point to describe how far it is
+        let nearest_y_norm = centerline_points
+            .first()
+            .map_or(0.0, |p| p.y as f32 / image_height as f32);
+        let distance_desc = if nearest_y_norm > 0.6 {
+            "relatively near"
+        } else if nearest_y_norm > 0.35 {
+            "near"
+        } else {
+            "far"
+        };
+        description_parts.push(format!(
+            "Warning: {} starts {} ahead, not directly at your feet.",
+            object_type_name, distance_desc
+        ));
+    } else {
+        description_parts.push(format!("The {} starts at your feet.", object_type_name));
+    }
+
+    // Shape description
+    match shape {
+        RoadShape::Straight => description_parts.push("It proceeds straight.".to_string()),
+        RoadShape::CurvesLeft => description_parts.push("It curves left.".to_string()),
+        RoadShape::CurvesRight => description_parts.push("It curves right.".to_string()),
+        RoadShape::Undetermined => description_parts.push("Its shape is unclear.".to_string()),
+    }
+
+    // Obstacle description
+    if obstacles.is_empty() {
+        description_parts.push("No immediate obstacles detected.".to_string());
+    } else {
+        // Describe the first detected obstacle's location
+        let first_obstacle = &obstacles[0];
+        let obstacle_direction = get_direction(first_obstacle.center_x, image_width);
+        let obstacle_desc = format!(
+            "There is an obstacle ({}) near the {}.",
+            first_obstacle.reason,
+            obstacle_direction // Use the Display trait of DirectionCategory
+        );
+        description_parts.push(obstacle_desc);
+        if obstacles.len() > 1 {
+            description_parts.push(format!(
+                "{} additional potential obstacles found.",
+                obstacles.len() - 1
+            ));
+        }
+    }
+
+    let final_description = description_parts.join(" ");
+
+    RoadAnalysisResult {
+        starts_at_feet,
+        shape,
+        obstacles,
+        description: final_description,
+    }
+}
+
+pub fn describe_anchor_points(
+    results: &[YoloDetectResult],
+    image_width: u32,
+    image_height: u32,
+    object_type_name: &str, // Added parameter for context
+) -> Vec<String> {
+    let mut descriptions = Vec::new();
+
+    if image_width == 0 || image_height == 0 {
+        eprintln!("Warning: Image dimensions are zero. Cannot generate descriptions.");
+        // Optionally return a single error message in the Vec
+        // descriptions.push("Error: Invalid image dimensions.".to_string());
+        return descriptions; // Return empty list
+    }
+
+    if results.is_empty() {
+        // Optional: Return a message indicating nothing was detected of this type
+        // descriptions.push(format!("No {} detected.", object_type_name));
+        return descriptions; // Return empty list
+    }
+
+    for (i, result) in results.iter().enumerate() {
+        // --- Crucial Assumption ---
+        // We assume result.x and result.y are the *center* coordinates.
+        // If they are top-left, you would calculate center points first:
+        // let center_x = result.x + result.width / 2.0;
+        // let center_y = result.y + result.height / 2.0;
+        // Then pass center_x and center_y to get_direction/get_distance.
+        // For this implementation, we proceed assuming x,y are already centers.
+
+        let direction = get_direction(result.x, image_width);
+        let distance = get_distance(result.y, image_height);
+
+        // Format the final description string
+        // Example: "Sidewalk 1: Very near, 12 o'clock direction"
+        // Example: "Obstacle 2: Far, 9:30 direction"
+        let description = format!(
+            "{} {}: {}, {}",
+            object_type_name, // e.g., "Highway", "Sidewalk"
+            i + 1,            // Index the object if multiple are detected
+            distance,         // Uses the Display trait of DistanceCategory
+            direction         // Uses the Display trait of DirectionCategory
+        );
+        descriptions.push(description);
+    }
+
+    descriptions
 }

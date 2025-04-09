@@ -1,35 +1,36 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
-use crate::inference::sam::SamEncoderOutput;
 use crate::utils::graph::SamPrompt;
 use crate::utils::tensor::linear_interpolate;
 use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
 use anyhow::{anyhow, Result};
 use bitvec::prelude::*;
-use cudarc::driver::{CudaSlice, DevicePtr, LaunchAsync, LaunchConfig};
+use cudarc::driver::{CudaSlice, DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
 use log::info;
 use ndarray::prelude::*;
 use ort::inputs;
-use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
-use ort::session::{Session, SessionInputValue, SessionOutputs};
+use ort::io_binding::IoBinding;
+use ort::memory::{AllocationDevice, Allocator, AllocatorType, MemoryInfo, MemoryType};
+use ort::session::run_options::OutputSelector;
+use ort::session::{HasSelectedOutputs, RunOptions, Session, SessionInputValue, SessionOutputs};
 use ort::tensor::Shape;
 use ort::value::{DynValue, Tensor, TensorRef, TensorRefMut};
 use parking_lot::{Mutex, RwLock};
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::io::Write;
+use std::mem::forget;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{Arc, LazyLock};
 
 pub trait SamImageInference {
-    fn encode_image(&self, image: Image) -> Result<SamEncoderOutput>;
     fn inference_frame(
         &self,
-        prompt: SamPrompt<f32>,
-        output_size: Option<(i32, i32)>,
-        encoded_result: &SamEncoderOutput,
-    ) -> Result<BitVec>;
+        image: Image,
+        prompts: Vec<Vec<SamPrompt<f32>>>,
+    ) -> Result<Vec<Vec<BitVec>>>;
 }
 
 pub struct SAMImageInferenceSession {
@@ -57,7 +58,11 @@ impl SAMImageInferenceSession {
 }
 
 impl SamImageInference for SAMImageInferenceSession {
-    fn encode_image(&self, mut image: Image) -> Result<SamEncoderOutput> {
+    fn inference_frame(
+        &self,
+        mut image: Image,
+        prompts: Vec<Vec<SamPrompt<f32>>>,
+    ) -> Result<Vec<Vec<BitVec>>> {
         let (image, image_size) = {
             let filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
                 .add_context("scale", "1024:1024")?
@@ -69,59 +74,86 @@ impl SamImageInference for SAMImageInferenceSession {
             (image, image_size)
         };
 
-        Ok(SamEncoderOutput {
-            encoder_output: self.inference_image_encoder(image.raw_data()?.deref())?,
-            origin_size: image_size,
-        })
-    }
-
-    fn inference_frame(
-        &self,
-        prompt: SamPrompt<f32>,
-        output_size: Option<(i32, i32)>,
-        encoded_result: &SamEncoderOutput,
-    ) -> Result<BitVec> {
-        let mask_decoder_output = self.inference_image_decoder(
-            encoded_result.encoder_output["image_embed"]
-                .try_extract_array::<f32>()?
-                .into_dimensionality::<Ix4>()?,
-            encoded_result.encoder_output["high_res_feats_0"]
-                .try_extract_array::<f32>()?
-                .into_dimensionality::<Ix4>()?,
-            encoded_result.encoder_output["high_res_feats_1"]
-                .try_extract_array::<f32>()?
-                .into_dimensionality::<Ix4>()?,
-            &prompt,
-            encoded_result.origin_size,
-            output_size,
+        let mut image_encoder = self.image_encoder.lock();
+        let mut encoder_binding = image_encoder.create_binding()?;
+        let encoder_output = self.inference_image_encoder(
+            image.raw_data()?.deref(),
+            &mut encoder_binding,
+            image_encoder.deref_mut(),
         )?;
 
-        let pred_mask = mask_decoder_output["masks"].try_extract_array::<f32>()?;
-        let iou_predictions = mask_decoder_output["iou_predictions"].try_extract_array::<f32>()?;
-        let max_index = iou_predictions
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .ok_or(anyhow!("No max index found"))?
-            .0;
+        let mut decoder = self.image_decoder.lock();
+        let mut decoder_binding = decoder.create_binding()?;
+        decoder_binding.bind_input("image_embed", &encoder_output["image_embed"])?;
+        decoder_binding.bind_input("high_res_feats_0", &encoder_output["high_res_feats_0"])?;
+        decoder_binding.bind_input("high_res_feats_1", &encoder_output["high_res_feats_1"])?;
 
-        let back = {
-            let pred_mask = pred_mask.slice(s![0, max_index, .., ..]);
-            let pred_mask = pred_mask.into_dimensionality::<Ix2>()?;
+        let mut back = vec![];
+        for prompt in prompts {
+            let mut back_inner = vec![];
+            for prompt in prompt {
+                let mask_decoder_output = self.inference_image_decoder(
+                    &prompt,
+                    image_size,
+                    &mut decoder_binding,
+                    decoder.deref_mut(),
+                )?;
 
-            let mut back = BitVec::with_capacity(pred_mask.len());
-            pred_mask.iter().for_each(|x| {
-                back.push(*x > 0f32);
-            });
-            back
-        };
+                let max_index = {
+                    let iou_predictions =
+                        mask_decoder_output["iou_predictions"].try_extract_array::<f32>()?;
+                    iou_predictions
+                        .iter()
+                        .enumerate()
+                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                        .ok_or(anyhow!("No max index found"))?
+                        .0
+                };
+
+                let pred_mask = {
+                    let value = &mask_decoder_output["masks"];
+                    let masks = value.data_ptr()?.cast::<f32>();
+
+                    let tensor = unsafe {
+                        let mut tensor = INFERENCE_SAM.alloc::<f32>(1024 * 1024)?;
+                        let mask =
+                            masks.add(image_size.0 as usize * image_size.1 as usize * max_index);
+                        let mask = INFERENCE_SAM.upgrade_device_ptr::<f32>(
+                            mask as u64,
+                            image_size.0 as usize * image_size.1 as usize,
+                        );
+                        let mask = Box::leak(Box::new(mask));
+
+                        INFERENCE_SAM.bilinear_interpolate_centered().launch(
+                            compute_launch_config(1024, 1024, (16, 16, 1)),
+                            (mask, &mut tensor, image_size.0, image_size.1, 1024, 1024),
+                        )?;
+                        tensor
+                    };
+
+                    INFERENCE_SAM.dtoh_sync_copy(&tensor)?
+                };
+
+                let mut temp = BitVec::with_capacity(pred_mask.len());
+                pred_mask.iter().for_each(|x| {
+                    temp.push(*x > 0f32);
+                });
+                back_inner.push(temp);
+            }
+            back.push(back_inner);
+        }
 
         Ok(back)
     }
 }
 
 impl SAMImageInferenceSession {
-    fn inference_image_encoder(&self, image: &Vec<u8>) -> Result<HashMap<String, DynValue>> {
+    fn inference_image_encoder<'a, 'b: 'a>(
+        &self,
+        image: &Vec<u8>,
+        encoder_binding: &'a mut IoBinding,
+        image_encoder: &'b mut OnnxSession,
+    ) -> Result<SessionOutputs<'a, 'b>> {
         static MEAN: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
             INFERENCE_SAM
                 .htod_sync_copy(&[0.485, 0.456, 0.406])
@@ -147,7 +179,6 @@ impl SAMImageInferenceSession {
             tensor
         };
 
-        let mut image_encoder = self.image_encoder.lock();
         let session_outputs = match image_encoder.executor {
             ExecutionProvider::CPU => {
                 let tensor = INFERENCE_SAM.dtoh_sync_copy(&tensor)?;
@@ -165,28 +196,37 @@ impl SAMImageInferenceSession {
                     (*tensor.device_ptr() as usize as *mut ()).cast(),
                     Shape::new([1, 3, 1024, 1024]),
                 )?;
-                image_encoder.run(vec![("image", SessionInputValue::from(tensor))])?
+
+                encoder_binding.bind_input("image", &tensor)?;
+
+                let allocator = Allocator::new(
+                    image_encoder,
+                    MemoryInfo::new(
+                        AllocationDevice::CUDA_PINNED,
+                        RUNNING_SAM_DEVICE,
+                        AllocatorType::Device,
+                        MemoryType::CPUOutput,
+                    )?,
+                )?;
+                encoder_binding.bind_output_to_device("image_embed", &allocator.memory_info())?;
+                encoder_binding
+                    .bind_output_to_device("high_res_feats_0", &allocator.memory_info())?;
+                encoder_binding
+                    .bind_output_to_device("high_res_feats_1", &allocator.memory_info())?;
+                image_encoder.run_binding(encoder_binding)?
             },
         };
-
-        let session_outputs = session_outputs
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect::<HashMap<String, DynValue>>();
 
         Ok(session_outputs)
     }
 
-    fn inference_image_decoder(
+    fn inference_image_decoder<'a, 'b: 'a>(
         &self,
-        feats: ArrayView4<f32>,
-        feat0: ArrayView4<f32>,
-        feat1: ArrayView4<f32>,
-
         prompt: &SamPrompt<f32>,
         image_size: (i32, i32),
-        output_size: Option<(i32, i32)>,
-    ) -> Result<HashMap<String, DynValue>> {
+        decoder_binding: &'a mut IoBinding,
+        decoder: &'b mut OnnxSession,
+    ) -> Result<SessionOutputs<'a, 'b>> {
         let mask_input = Array4::<f32>::zeros((1, 1, 256, 256));
 
         let trans_prompt = match &prompt {
@@ -228,27 +268,44 @@ impl SAMImageInferenceSession {
             SamPrompt::Both(_, _) => trans_prompt.into_shape_with_order((1, 3, 2))?,
         };
 
-        let image_size = output_size.unwrap_or(image_size);
+        decoder_binding.bind_input("point_coords", &Tensor::from_array(prompt_out)?)?;
+        decoder_binding.bind_input("point_labels", &Tensor::from_array(point_labels)?)?;
+        decoder_binding.bind_input("mask_input", &Tensor::from_array(mask_input)?)?;
+        decoder_binding.bind_input("has_mask_input", &Tensor::from_array(array![0_f32])?)?;
+        decoder_binding.bind_input(
+            "orig_im_size",
+            &Tensor::from_array(array![image_size.0, image_size.1])?,
+        )?;
 
-        let mut decoder = self.image_decoder.lock();
-        let result = decoder.run(inputs![
-            "image_embed"      => TensorRef::from_array_view(feats)?,
-            "high_res_feats_0"    => TensorRef::from_array_view(feat0)?,
-            "high_res_feats_1"    => TensorRef::from_array_view(feat1)?,
+        let allocator = Allocator::new(
+            decoder,
+            MemoryInfo::new(
+                AllocationDevice::CUDA_PINNED,
+                RUNNING_SAM_DEVICE,
+                AllocatorType::Device,
+                MemoryType::CPUOutput,
+            )?,
+        )?;
+        decoder_binding.bind_output_to_device("masks", &allocator.memory_info())?;
+        decoder_binding.bind_output_to_device("iou_predictions", &allocator.memory_info())?;
 
-            "point_coords"          => Tensor::from_array(prompt_out)?,
-            "point_labels"          => Tensor::from_array(point_labels)?,
-            "mask_input"            => Tensor::from_array(mask_input)?,
-            "has_mask_input"        => Tensor::from_array(array![0_f32])?,
+        Ok(decoder.run_binding(decoder_binding)?)
+    }
+}
 
-            "orig_im_size"          => Tensor::from_array(array![image_size.0, image_size.1])?,
-        ])?;
+fn compute_launch_config(
+    out_width: u32,
+    out_height: u32,
+    threads_per_block: (u32, u32, u32),
+) -> LaunchConfig {
+    // 计算网格尺寸
+    let grid_dim_x = (out_width + threads_per_block.0 - 1) / threads_per_block.0;
+    let grid_dim_y = (out_height + threads_per_block.1 - 1) / threads_per_block.1;
+    let grid_dim_z = 1; // 对于 2D 图像处理，通常设置为 1
 
-        let result = result
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect::<HashMap<String, DynValue>>();
-
-        Ok(result)
+    LaunchConfig {
+        grid_dim: (grid_dim_x, grid_dim_y, grid_dim_z),
+        block_dim: threads_per_block,
+        shared_mem_bytes: 0, // 假设不使用动态共享内存
     }
 }

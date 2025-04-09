@@ -8,7 +8,7 @@ pub struct OnnxSession {
     pub(crate) executor: ExecutionProvider,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum ExecutionProvider {
     CPU,
     CUDA(i32),
