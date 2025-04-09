@@ -29,6 +29,7 @@ pub trait SamImageInference {
     fn inference_frame(
         &self,
         image: Image,
+        out_put_size: Option<(i32, i32)>,
         prompts: Vec<Vec<SamPrompt<f32>>>,
     ) -> Result<Vec<Vec<BitVec>>>;
 }
@@ -61,6 +62,7 @@ impl SamImageInference for SAMImageInferenceSession {
     fn inference_frame(
         &self,
         mut image: Image,
+        out_put_size: Option<(i32, i32)>,
         prompts: Vec<Vec<SamPrompt<f32>>>,
     ) -> Result<Vec<Vec<BitVec>>> {
         let (image, image_size) = {
@@ -95,6 +97,7 @@ impl SamImageInference for SAMImageInferenceSession {
                 let mask_decoder_output = self.inference_image_decoder(
                     &prompt,
                     image_size,
+                    out_put_size,
                     &mut decoder_binding,
                     decoder.deref_mut(),
                 )?;
@@ -110,6 +113,7 @@ impl SamImageInference for SAMImageInferenceSession {
                         .0
                 };
 
+                //todo: 这里只能处理放大，缩小只能用cpu实现
                 let pred_mask = {
                     let value = &mask_decoder_output["masks"];
                     let masks = value.data_ptr()?.cast::<f32>();
@@ -125,7 +129,7 @@ impl SamImageInference for SAMImageInferenceSession {
                         let mask = Box::leak(Box::new(mask));
 
                         INFERENCE_SAM.bilinear_interpolate_centered().launch(
-                            compute_launch_config(1024, 1024, (16, 16, 1)),
+                            compute_launch_config(1024, 1024),
                             (mask, &mut tensor, image_size.0, image_size.1, 1024, 1024),
                         )?;
                         tensor
@@ -134,11 +138,13 @@ impl SamImageInference for SAMImageInferenceSession {
                     INFERENCE_SAM.dtoh_sync_copy(&tensor)?
                 };
 
-                let mut temp = BitVec::with_capacity(pred_mask.len());
-                pred_mask.iter().for_each(|x| {
-                    temp.push(*x > 0f32);
+                back_inner.push({
+                    let mut temp = BitVec::with_capacity(pred_mask.len());
+                    pred_mask.iter().for_each(|x| {
+                        temp.push(*x > 0f32);
+                    });
+                    temp
                 });
-                back_inner.push(temp);
             }
             back.push(back_inner);
         }
@@ -224,6 +230,7 @@ impl SAMImageInferenceSession {
         &self,
         prompt: &SamPrompt<f32>,
         image_size: (i32, i32),
+        out_put_size: Option<(i32, i32)>,
         decoder_binding: &'a mut IoBinding,
         decoder: &'b mut OnnxSession,
     ) -> Result<SessionOutputs<'a, 'b>> {
@@ -274,7 +281,11 @@ impl SAMImageInferenceSession {
         decoder_binding.bind_input("has_mask_input", &Tensor::from_array(array![0_f32])?)?;
         decoder_binding.bind_input(
             "orig_im_size",
-            &Tensor::from_array(array![image_size.0, image_size.1])?,
+            &Tensor::from_array(
+                out_put_size
+                    .map(|x| array![x.0, x.1])
+                    .unwrap_or(array![image_size.0, image_size.1]),
+            )?,
         )?;
 
         let allocator = Allocator::new(
@@ -293,19 +304,20 @@ impl SAMImageInferenceSession {
     }
 }
 
-fn compute_launch_config(
-    out_width: u32,
-    out_height: u32,
-    threads_per_block: (u32, u32, u32),
-) -> LaunchConfig {
-    // 计算网格尺寸
-    let grid_dim_x = (out_width + threads_per_block.0 - 1) / threads_per_block.0;
-    let grid_dim_y = (out_height + threads_per_block.1 - 1) / threads_per_block.1;
-    let grid_dim_z = 1; // 对于 2D 图像处理，通常设置为 1
+pub fn compute_launch_config(out_width: u32, out_height: u32) -> LaunchConfig {
+    let block_dim_x: u32 = 16;
+    let block_dim_y: u32 = 16;
+    let block_dim_z: u32 = 1;
+
+    let grid_dim_x = (out_width + block_dim_x - 1) / block_dim_x;
+    let grid_dim_y = (out_height + block_dim_y - 1) / block_dim_y;
+    let grid_dim_z = 1;
+
+    let shared_mem_bytes: u32 = 0;
 
     LaunchConfig {
         grid_dim: (grid_dim_x, grid_dim_y, grid_dim_z),
-        block_dim: threads_per_block,
-        shared_mem_bytes: 0, // 假设不使用动态共享内存
+        block_dim: (block_dim_x, block_dim_y, block_dim_z),
+        shared_mem_bytes,
     }
 }
