@@ -6,6 +6,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use anyhow::Result;
 use bitvec::prelude::BitVec;
+use log::info;
 use spark_inference::disable_ffmpeg_logging;
 use spark_inference::inference::sam::image_inference::{
     SAMImageInferenceSession, SamImageInference,
@@ -19,120 +20,12 @@ use spark_inference::utils::masks::ApplyMask;
 use spark_media::filter::filter::AVFilter;
 use spark_media::{Image, RGB};
 use std::fmt::{Display, Formatter};
-use tklog::{LEVEL, LOG};
 
 fn log_init() {
-    LOG.set_console(true) // Enables console logging
-        .set_level(LEVEL::Info) // Sets the log level; default is Debug
-        // .set_format(Format::LevelFlag | Format::Time | Format::ShortFileName)  // Defines structured log output with chosen details
-        // .set_cutmode_by_size("tklogsize.txt", 1<<20, 10, true)  // Cuts logs by file size (1 MB), keeps 10 backups, compresses backups
-        .uselog(); // Customizes log output format; default is "{level}{time} {file}:{message}"
+    tracing_subscriber::fmt::init();
 }
 
 fn main() -> Result<()> {
-    // log_init();
-    disable_ffmpeg_logging();
-
-    let yolo = YoloDetectSession::new("./data/model")?;
-    let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
-
-    let path = "./data/image/d4.jpg";
-    let mut image = Image::open_file(path)?;
-    let sam_image = image.clone();
-
-    let results = yolo.inference_yolo(image.clone(), 0.25)?;
-    println!("results: {:?}", results.len());
-
-    let result_highway = results
-        .clone()
-        .into_iter()
-        .filter(|result| result.score[0] >= 0.8)
-        .collect::<Vec<_>>();
-    let result_sidewalk = results
-        .into_iter()
-        .filter(|result| result.score[1] >= 0.4)
-        .collect::<Vec<_>>();
-    let result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
-    let result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
-    println!("highway: {:?}", result_highway);
-    println!("sidewalk: {:?}", result_sidewalk);
-
-    let (image_w, image_h) = image.get_size();
-    let mut filter = AVFilter::builder(image.pixel_format()?, image.get_size())?
-        .add_context("scale", "1024:1024")?
-        .add_context("format", "rgb24")?;
-
-    for mask in result_highway.iter() {
-        let string1 = format!(
-            "x=({x}-{width}/2):y=({y}-{height}/2):w={width}:h={height}:color=red@1.0:t=6",
-            x = mask.x / image_w as f32 * 1024.0,
-            y = mask.y / image_h as f32 * 1024.0,
-            width = mask.width / image_w as f32 * 1024.0,
-            height = mask.height / image_h as f32 * 1024.0,
-        );
-        filter = filter.add_context("drawbox", string1.as_str())?
-    }
-    for x in result_sidewalk.iter() {
-        let string = format!(
-            "x=({x}-{width}/2):y=({y}-{height}/2):w={width}:h={height}:color=blue@1.0:t=6",
-            x = x.x / image_w as f32 * 1024.0,
-            y = x.y / image_h as f32 * 1024.0,
-            width = x.width / image_w as f32 * 1024.0,
-            height = x.height / image_h as f32 * 1024.0,
-        );
-        filter = filter.add_context("drawbox", string.as_str())?
-    }
-    image.apply_filter(&filter.build()?)?;
-
-    let result_highway = result_highway
-        .iter()
-        .map(|yolo| {
-            SamPrompt::both(
-                (
-                    yolo.x - yolo.width / 2.0,
-                    yolo.y - yolo.height / 2.0,
-                    yolo.x + yolo.width / 2.0,
-                    yolo.y + yolo.height / 2.0,
-                ),
-                (yolo.x, yolo.y),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let result_sidewalk = result_sidewalk
-        .iter()
-        .map(|yolo| {
-            SamPrompt::both(
-                (
-                    yolo.x - yolo.width / 2.0,
-                    yolo.y - yolo.height / 2.0,
-                    yolo.x + yolo.width / 2.0,
-                    yolo.y + yolo.height / 2.0,
-                ),
-                (yolo.x, yolo.y),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let mask = sam2.inference_frame(
-        sam_image,
-        Some((1024, 1024)),
-        vec![result_highway, result_sidewalk],
-    )?;
-
-    for x in &mask[0] {
-        image.layering_mask(&x, RGB(75, 0, 0))?;
-    }
-    for x in &mask[1] {
-        image.layering_mask(&x, RGB(0, 0, 75))?;
-    }
-
-    image.save_with_format("./data/out/a_out.png")?;
-
-    Ok(())
-}
-/*
-fn mains() -> Result<()> {
     log_init();
     disable_ffmpeg_logging();
 
@@ -141,6 +34,7 @@ fn mains() -> Result<()> {
 
     let path = "./data/image/d4.jpg";
     let image = Image::open_file(path)?;
+    let sam_image = image.clone();
     let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
 
     let results = yolo.inference_yolo(image.clone(), 0.25)?;
@@ -161,12 +55,10 @@ fn mains() -> Result<()> {
     info!("yolo highway result: {:?}", result_highway);
     info!("yolo sidewalk result: {:?}", result_sidewalk);
 
-    let result = sam2.encode_image(image)?;
-
-    let highway_mask = result_highway
-        .iter()
-        .map(|yolo| {
-            sam2.inference_frame(
+    let mask = {
+        let result_highway = result_highway
+            .iter()
+            .map(|yolo| {
                 SamPrompt::both(
                     (
                         yolo.x - yolo.width / 2.0,
@@ -175,25 +67,13 @@ fn mains() -> Result<()> {
                         yolo.y + yolo.height / 2.0,
                     ),
                     (yolo.x, yolo.y),
-                ),
-                &result,
-            )
-        })
-        .filter_map(|x| {
-            match x {
-                Ok(mask) => Some(mask),
-                Err(e) => {
-                    error!("Error processing mask: {}", e);
-                    None
-                }
-            }
-        })
-        .collect::<Vec<_>>();
+                )
+            })
+            .collect::<Vec<_>>();
 
-    let sidewalk_mask = result_sidewalk
-        .iter()
-        .map(|yolo| {
-            sam2.inference_frame(
+        let result_sidewalk = result_sidewalk
+            .iter()
+            .map(|yolo| {
                 SamPrompt::both(
                     (
                         yolo.x - yolo.width / 2.0,
@@ -202,66 +82,48 @@ fn mains() -> Result<()> {
                         yolo.y + yolo.height / 2.0,
                     ),
                     (yolo.x, yolo.y),
-                ),
-                &result,
-            )
-        })
-        .filter_map(|x| {
-            match x {
-                Ok(mask) => Some(mask),
-                Err(e) => {
-                    error!("Error processing mask: {}", e);
-                    None
-                }
-            }
-        })
-        .collect::<Vec<_>>();
+                )
+            })
+            .collect::<Vec<_>>();
+
+        sam2.inference_frame(
+            sam_image,
+            Some((1024, 1024)),
+            vec![result_highway, result_sidewalk],
+        )?
+    };
 
     println!("--- Sidewalk Detections ---");
-    describe_anchor_points(
-        &result_sidewalk,
-        image_width,
-        image_height,
-        "Sidewalk"
-    )
+    describe_anchor_points(&result_sidewalk, image_width, image_height, "Sidewalk")
         .iter()
         .for_each(|desc| println!("{}", desc));
 
     println!("\n--- Highway Detections ---");
-    describe_anchor_points(
-        &result_highway,
-        image_width,
-        image_height,
-        "Highway"
-    )
+    describe_anchor_points(&result_highway, image_width, image_height, "Highway")
         .iter()
         .for_each(|desc| println!("{}", desc));
 
     println!("--- Analyzing Highway ---");
-    highway_mask
-        .iter()
-        .for_each(|x| {
-            let result_straight = analyze_road_mask(x, image_width, image_height, "Highway");
-            println!("Starts at feet: {}", result_straight.starts_at_feet);
-            println!("Shape: {:?}", result_straight.shape);
-            println!("Obstacles: {:?}", result_straight.obstacles);
-            println!("Description: {}", result_straight.description);
-        });
+    mask[0].iter().for_each(|x| {
+        let result_straight = analyze_road_mask(x, 1024, 1024, "Highway");
+        println!("Starts at feet: {}", result_straight.starts_at_feet);
+        println!("Shape: {:?}", result_straight.shape);
+        println!("Obstacles: {:?}", result_straight.obstacles);
+        println!("Description: {}", result_straight.description);
+    });
 
     println!("\n--- Analyzing Sidewalk ---");
-    sidewalk_mask
-        .iter()
-        .for_each(|x| {
-            let result_curve_gap = analyze_road_mask(x, image_width, image_height, "Sidewalk");
-            println!("Starts at feet: {}", result_curve_gap.starts_at_feet);
-            println!("Shape: {:?}", result_curve_gap.shape);
-            println!("Obstacles: {:?}", result_curve_gap.obstacles);
-            println!("Description: {}", result_curve_gap.description);
-        });
+    mask[1].iter().for_each(|x| {
+        let result_curve_gap = analyze_road_mask(x, 1024, 1024, "Sidewalk");
+        println!("Starts at feet: {}", result_curve_gap.starts_at_feet);
+        println!("Shape: {:?}", result_curve_gap.shape);
+        println!("Obstacles: {:?}", result_curve_gap.obstacles);
+        println!("Description: {}", result_curve_gap.description);
+    });
 
     Ok(())
 }
-*/
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 enum DirectionCategory {
     Clock(String),

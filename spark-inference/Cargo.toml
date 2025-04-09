@@ -25,5 +25,6 @@ version = "0.16.1"
 features = ["rayon", "matrixmultiply-threading"]
 
 [dependencies.ort]
+default-features = false
 git = "https://github.com/pykeio/ort.git"
-features = ["tensorrt", "cuda", "load-dynamic", "ndarray"]
+features = ["std", "ndarray", "copy-dylibs", "load-dynamic", "cuda"]
