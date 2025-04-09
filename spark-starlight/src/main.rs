@@ -52,8 +52,11 @@ fn main() -> Result<()> {
     let mut result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
     let mut result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
 
-    info!("yolo highway result: {:?}", result_highway);
-    info!("yolo sidewalk result: {:?}", result_sidewalk);
+    let highway = describe_anchor_points(&result_highway, image_width, image_height, "Highway");
+    let sidewalk = describe_anchor_points(&result_sidewalk, image_width, image_height, "Sidewalk");
+
+    info!("yolo highway result: {:?}", highway);
+    info!("yolo sidewalk result: {:?}", sidewalk);
 
     let mask = {
         let result_highway = result_highway
@@ -162,6 +165,47 @@ impl Display for DistanceCategory {
     }
 }
 
+#[derive(Debug, Clone)]
+struct CenterLinePoint {
+    y: u32,        // Vertical position (pixel row)
+    center_x: f32, // Horizontal center of the mask at this row
+    width: u32,    // Width of the mask at this row
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum RoadShape {
+    Straight,
+    CurvesLeft, // Extends towards the left in the distance (drifts right as it gets closer)
+    CurvesRight, // Extends towards the right in the distance (drifts left as it gets closer)
+    Undetermined, // Not enough data or too complex
+}
+
+#[derive(Debug, Clone)]
+struct ObstacleInfo {
+    y: u32,         // Approximate vertical position of the obstacle
+    center_x: f32,  // Approximate horizontal position
+    reason: String, // e.g., "Gap", "Narrowing"
+}
+
+#[derive(Debug, Clone)]
+pub struct RoadAnalysisResult {
+    pub starts_at_feet: bool,
+    pub shape: RoadShape,
+    pub obstacles: Vec<ObstacleInfo>,
+    pub description: String, // Generated textual summary
+}
+
+// --- Configuration Constants (Crucial for Tuning!) ---
+const NUM_VERTICAL_SAMPLES: u32 = 20; // How many horizontal slices to analyze
+const MIN_MASK_WIDTH_FOR_CENTER: u32 = 5; // Minimum pixels wide to calculate a center
+const ROAD_START_Y_THRESHOLD: f32 = 0.90; // How close to the bottom (normalized) road should start
+const ROAD_CENTER_X_THRESHOLD: f32 = 0.2; // Max normalized horizontal drift from center for "centered" road (0.2 means 20% from center)
+const MIN_CENTERLINE_POINTS_FOR_SHAPE: usize = 5; // Need at least this many points for shape analysis
+const STRAIGHT_ROAD_X_DRIFT_THRESHOLD: f32 = 0.05; // Max normalized horizontal drift for "straight"
+const OBSTACLE_WIDTH_CHANGE_FACTOR: f32 = 0.5; // Significant narrowing if width drops by this factor
+const OBSTACLE_GAP_ROWS_THRESHOLD: u32 = 3; // How many consecutive empty sampled rows indicate a gap
+
+// --- Helper Functions ---
 /// Calculates the perceived distance of an anchor point based on its y-coordinate.
 /// Considers perspective (lower y in image means closer to the viewer).
 ///
@@ -226,55 +270,12 @@ fn get_direction(x: f32, image_width: u32) -> DirectionCategory {
     DirectionCategory::Clock(clock_str.to_string())
 }
 
-// --- New Structs and Enums for Mask Analysis ---
-
-#[derive(Debug, Clone)]
-struct CenterlinePoint {
-    y: u32,        // Vertical position (pixel row)
-    center_x: f32, // Horizontal center of the mask at this row
-    width: u32,    // Width of the mask at this row
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-enum RoadShape {
-    Straight,
-    CurvesLeft, // Extends towards the left in the distance (drifts right as it gets closer)
-    CurvesRight, // Extends towards the right in the distance (drifts left as it gets closer)
-    Undetermined, // Not enough data or too complex
-}
-
-#[derive(Debug, Clone)]
-struct ObstacleInfo {
-    y: u32,         // Approximate vertical position of the obstacle
-    center_x: f32,  // Approximate horizontal position
-    reason: String, // e.g., "Gap", "Narrowing"
-}
-
-#[derive(Debug, Clone)]
-pub struct RoadAnalysisResult {
-    pub starts_at_feet: bool,
-    pub shape: RoadShape,
-    pub obstacles: Vec<ObstacleInfo>,
-    pub description: String, // Generated textual summary
-}
-
-// --- Configuration Constants (Crucial for Tuning!) ---
-const NUM_VERTICAL_SAMPLES: u32 = 20; // How many horizontal slices to analyze
-const MIN_MASK_WIDTH_FOR_CENTER: u32 = 5; // Minimum pixels wide to calculate a center
-const ROAD_START_Y_THRESHOLD: f32 = 0.90; // How close to the bottom (normalized) road should start
-const MIN_CENTERLINE_POINTS_FOR_SHAPE: usize = 5; // Need at least this many points for shape analysis
-const STRAIGHT_ROAD_X_DRIFT_THRESHOLD: f32 = 0.05; // Max normalized horizontal drift for "straight"
-const OBSTACLE_WIDTH_CHANGE_FACTOR: f32 = 0.5; // Significant narrowing if width drops by this factor
-const OBSTACLE_GAP_ROWS_THRESHOLD: u32 = 3; // How many consecutive empty sampled rows indicate a gap
-
-// --- Helper Functions ---
-
-/// Extracts the centerline and width profile of the road mask.
+/// Extracts the center line and width profile of the road mask.
 /// Assumes mask is row-major: index = y * width + x
-fn extract_centerline(mask: &BitVec, image_width: u32, image_height: u32) -> Vec<CenterlinePoint> {
-    let mut centerline = Vec::new();
+fn extract_center_line(mask: &BitVec, image_width: u32, image_height: u32) -> Vec<CenterLinePoint> {
+    let mut center_line = Vec::new();
     if image_width == 0 || image_height == 0 || mask.is_empty() {
-        return centerline; // Cannot process if dimensions are zero or mask is empty
+        return center_line; // Cannot process if dimensions are zero or mask is empty
     }
     if mask.len() != (image_width * image_height) as usize {
         eprintln!(
@@ -284,8 +285,7 @@ fn extract_centerline(mask: &BitVec, image_width: u32, image_height: u32) -> Vec
             image_height,
             image_width * image_height
         );
-        // Decide how to handle: return empty, panic, or try to proceed? Returning empty is safer.
-        return centerline;
+        return center_line;
     }
 
     let y_step = image_height / (NUM_VERTICAL_SAMPLES + 1); // +1 to avoid sampling very top/bottom edges potentially
@@ -318,7 +318,7 @@ fn extract_centerline(mask: &BitVec, image_width: u32, image_height: u32) -> Vec
             let width = max_val.saturating_sub(min_val) + 1;
             if width >= MIN_MASK_WIDTH_FOR_CENTER {
                 let center_x = (min_val + max_val) as f32 / 2.0;
-                centerline.push(CenterlinePoint { y, center_x, width });
+                center_line.push(CenterLinePoint { y, center_x, width });
             }
             // Optional: else { maybe log that a thin segment was ignored }
         }
@@ -326,11 +326,11 @@ fn extract_centerline(mask: &BitVec, image_width: u32, image_height: u32) -> Vec
     }
 
     // Resulting centerline points are ordered from near (high y) to far (low y)
-    centerline
+    center_line
 }
 
 /// Analyzes the shape (straight, curve left/right) based on centerline points.
-fn analyze_centerline_shape(centerline: &[CenterlinePoint], image_width: u32) -> RoadShape {
+fn analyze_centerline_shape(centerline: &[CenterLinePoint], image_width: u32) -> RoadShape {
     if centerline.len() < MIN_CENTERLINE_POINTS_FOR_SHAPE {
         return RoadShape::Undetermined;
     }
@@ -358,7 +358,7 @@ fn analyze_centerline_shape(centerline: &[CenterlinePoint], image_width: u32) ->
 
 /// Detects obstacles like gaps or significant narrowing based on the centerline profile.
 fn detect_obstacles(
-    centerline: &[CenterlinePoint],
+    centerline: &[CenterLinePoint],
     image_width: u32,
     image_height: u32, // Needed for gap detection logic potentially
     mask: &BitVec,     // Needed for more detailed gap check if required
@@ -428,15 +428,25 @@ fn detect_obstacles(
     obstacles
 }
 
-/// Checks if the road mask starts near the bottom edge of the image.
+/// Checks if the road mask starts near the bottom edge of the image and is horizontally centered.
+/// Modified version that considers both vertical position and horizontal alignment.
 fn check_road_start(
-    centerline: &[CenterlinePoint], // Assumes ordered near to far
+    center_line: &[CenterLinePoint], // Assumes ordered near to far
+    image_width: u32,
     image_height: u32,
 ) -> bool {
-    match centerline.first() {
+    match center_line.first() {
         Some(nearest_point) => {
+            // Existing vertical position check
             let normalized_y = nearest_point.y as f32 / image_height as f32;
-            normalized_y >= ROAD_START_Y_THRESHOLD
+            let is_at_bottom = normalized_y >= ROAD_START_Y_THRESHOLD;
+
+            // New horizontal alignment check
+            let normalized_x = (nearest_point.center_x / image_width as f32) - 0.5; // Center is 0.0
+            let offset_from_center = normalized_x.abs(); // Absolute offset from center
+            let is_centered = offset_from_center <= ROAD_CENTER_X_THRESHOLD;
+
+            is_at_bottom && is_centered
         }
         None => false, // No centerline points found, so doesn't start at feet
     }
@@ -476,10 +486,10 @@ pub fn analyze_road_mask(
         };
     }
 
-    // 1. Extract Centerline
-    let centerline_points = extract_centerline(mask, image_width, image_height);
+    // 1. Extract Center line
+    let center_line_points = extract_center_line(mask, image_width, image_height);
 
-    if centerline_points.is_empty() {
+    if center_line_points.is_empty() {
         return RoadAnalysisResult {
             starts_at_feet: false,
             shape: RoadShape::Undetermined,
@@ -489,13 +499,13 @@ pub fn analyze_road_mask(
     }
 
     // 2. Check Starting Position
-    let starts_at_feet = check_road_start(&centerline_points, image_height);
+    let starts_at_feet = check_road_start(&center_line_points, image_width, image_height);
 
     // 3. Analyze Shape
-    let shape = analyze_centerline_shape(&centerline_points, image_width);
+    let shape = analyze_centerline_shape(&center_line_points, image_width);
 
     // 4. Detect Obstacles
-    let obstacles = detect_obstacles(&centerline_points, image_width, image_height, mask);
+    let obstacles = detect_obstacles(&center_line_points, image_width, image_height, mask);
 
     // 5. Generate Description
     let mut description_parts = Vec::new();
@@ -503,7 +513,7 @@ pub fn analyze_road_mask(
     // Start position warning
     if !starts_at_feet {
         // Find the y-coordinate of the nearest point to describe how far it is
-        let nearest_y_norm = centerline_points
+        let nearest_y_norm = center_line_points
             .first()
             .map_or(0.0, |p| p.y as f32 / image_height as f32);
         let distance_desc = if nearest_y_norm > 0.6 {
