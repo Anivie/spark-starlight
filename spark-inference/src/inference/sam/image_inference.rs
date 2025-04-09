@@ -113,38 +113,17 @@ impl SamImageInference for SAMImageInferenceSession {
                         .0
                 };
 
-                //todo: 这里只能处理放大，缩小只能用cpu实现
-                let pred_mask = {
-                    let value = &mask_decoder_output["masks"];
-                    let masks = value.data_ptr()?.cast::<f32>();
+                let pred_mask = mask_decoder_output["masks"].try_extract_array::<f32>()?;
 
-                    let tensor = unsafe {
-                        let mut tensor = INFERENCE_SAM.alloc::<f32>(1024 * 1024)?;
-                        let mask =
-                            masks.add(image_size.0 as usize * image_size.1 as usize * max_index);
-                        let mask = INFERENCE_SAM.upgrade_device_ptr::<f32>(
-                            mask as u64,
-                            image_size.0 as usize * image_size.1 as usize,
-                        );
-                        let mask = Box::leak(Box::new(mask));
-
-                        INFERENCE_SAM.bilinear_interpolate_centered().launch(
-                            compute_launch_config(1024, 1024),
-                            (mask, &mut tensor, image_size.0, image_size.1, 1024, 1024),
-                        )?;
-                        tensor
-                    };
-
-                    INFERENCE_SAM.dtoh_sync_copy(&tensor)?
-                };
-
-                back_inner.push({
-                    let mut temp = BitVec::with_capacity(pred_mask.len());
-                    pred_mask.iter().for_each(|x| {
+                let mut temp = BitVec::with_capacity(pred_mask.len());
+                pred_mask
+                    .slice(s![0, max_index, .., ..])
+                    .iter()
+                    .for_each(|x| {
                         temp.push(*x > 0f32);
                     });
-                    temp
-                });
+
+                back_inner.push(temp);
             }
             back.push(back_inner);
         }
@@ -291,8 +270,8 @@ impl SAMImageInferenceSession {
         let allocator = Allocator::new(
             decoder,
             MemoryInfo::new(
-                AllocationDevice::CUDA_PINNED,
-                RUNNING_SAM_DEVICE,
+                AllocationDevice::CPU,
+                0,
                 AllocatorType::Device,
                 MemoryType::CPUOutput,
             )?,

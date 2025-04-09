@@ -114,7 +114,11 @@ fn main() -> Result<()> {
         })
         .collect::<Vec<_>>();
 
-    let mask = sam2.inference_frame(sam_image, None, vec![result_highway, result_sidewalk])?;
+    let mask = sam2.inference_frame(
+        sam_image,
+        Some((1024, 1024)),
+        vec![result_highway, result_sidewalk],
+    )?;
 
     for x in &mask[0] {
         image.layering_mask(&x, RGB(75, 0, 0))?;
