@@ -23,3 +23,12 @@ pub(crate) const DISTANCE_PERSPECTIVE_POWER: f32 = 0.7;
 pub(crate) const NEAR_OBJECT_HEIGHT_THRESHOLD_FACTOR: f32 = 0.3; // 30% of image height
 /// Threshold for width ratio (box_width / image_width) to consider an object "covering path" when very near.
 pub(crate) const NEAR_OBJECT_WIDTH_THRESHOLD_FACTOR: f32 = 0.5; // 50% of image width
+                                                                // --- Define Thresholds for "Ending Soon" ---
+                                                                // Threshold 1: Farthest point doesn't reach far vertically (e.g., stays in the bottom 60% of the image)
+                                                                // Remember: y=0 is top, y=image_height is bottom. A higher Y value means closer to the user.
+const FAR_POINT_Y_THRESHOLD_FACTOR: f32 = 0.40; // If farthest point's Y > 40% of height, it's "close"
+                                                // Threshold 2: Minimum number of centerline points to be considered "continuing"
+const MIN_POINTS_FOR_CONTINUATION: usize = 5; // Needs tuning
+                                              // Threshold 3: How close a "gap" obstacle needs to be (e.g., in the bottom half of the image)
+const CLOSE_GAP_Y_THRESHOLD_FACTOR: f32 = 0.50;
+// --- End Thresholds ---

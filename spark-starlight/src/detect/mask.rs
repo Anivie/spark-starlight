@@ -3,7 +3,11 @@ use crate::detect::property::center_line::CenterLines;
 use crate::detect::property::direction::DirectionCategory;
 use crate::detect::property::distance::DistanceCategory;
 use crate::detect::property::road_shape::RoadShape;
+use crate::detect::{
+    CLOSE_GAP_Y_THRESHOLD_FACTOR, FAR_POINT_Y_THRESHOLD_FACTOR, MIN_POINTS_FOR_CONTINUATION,
+};
 use bitvec::prelude::BitVec;
+use log::debug;
 
 /// Analyzes a road mask to determine shape, obstacles, and starting position.
 /// Args:
@@ -136,6 +140,69 @@ pub fn analyze_road_mask(
         // (e.g., check pixels near user_x, user_y) and issue "about to leave" warning.
         // This requires analyzing mask connectivity near the user's position.
         // Example: Check if mask[user_pos] is true, but mask[user_pos - offset] or mask[user_pos + offset] is false.
+    }
+
+    // --- Add this new block within the analyze_road_mask function ---
+
+    // --- Sidewalk Ending Warning ---
+    // This specific warning triggers ONLY if the sidewalk starts at the user's feet,
+    // but the analysis suggests it ends or is obstructed relatively soon ahead.
+    if object_type_name == "Sidewalk" && starts_at_feet && !center_line_points.is_empty() {
+        let farthest_point = center_line_points.last().unwrap(); // Safe due to !is_empty check
+
+        let end_threshold_y = image_height as f32 * FAR_POINT_Y_THRESHOLD_FACTOR;
+        let close_gap_threshold_y = image_height as f32 * CLOSE_GAP_Y_THRESHOLD_FACTOR;
+
+        let mut sidewalk_ends_soon = false;
+        let mut ending_reason = ""; // For debugging/logging if needed
+
+        // Check Condition 1: Farthest detected point doesn't reach far up the image
+        if (farthest_point.y as f32) > end_threshold_y {
+            sidewalk_ends_soon = true;
+            ending_reason = "farthest point too close";
+        }
+
+        // Check Condition 2: Centerline is very short
+        if !sidewalk_ends_soon && center_line_points.len() < MIN_POINTS_FOR_CONTINUATION {
+            sidewalk_ends_soon = true;
+            ending_reason = "centerline too short";
+        }
+
+        // Check Condition 3: A gap obstacle is detected relatively close
+        if !sidewalk_ends_soon {
+            if let Some(first_obstacle) = obstacles.first() {
+                if first_obstacle.reason.contains("gap")
+                    && (first_obstacle.y as f32) > close_gap_threshold_y
+                {
+                    sidewalk_ends_soon = true;
+                    ending_reason = "close gap detected";
+                }
+            }
+        }
+
+        // If any condition met, add the warning, but avoid redundancy with existing close obstacle warnings.
+        if sidewalk_ends_soon {
+            debug!("Sidewalk ending condition met: {}", ending_reason); // Optional: Use logging
+
+            // Check if a very near or relatively near obstacle is already the *first* reported obstacle.
+            let already_warned_by_close_obstacle = obstacles.first().map_or(false, |obs| {
+                let obs_dist = DistanceCategory::get_distance(obs.y as f32, image_height);
+                // Only consider it "already warned" if the *first* obstacle is very close.
+                obs_dist == DistanceCategory::VeryNear
+                    || obs_dist == DistanceCategory::RelativelyNear
+            });
+
+            if !already_warned_by_close_obstacle {
+                description_parts.push(
+                    "Warning: The sidewalk path ahead appears short or obstructed soon."
+                        .to_string(),
+                );
+            } else {
+                debug!(
+                    "Sidewalk ending warning suppressed due to existing close obstacle warning."
+                ); // Optional: Use logging
+            }
+        }
     }
 
     let description = description_parts.join(" ");
