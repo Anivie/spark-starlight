@@ -110,14 +110,41 @@ fn main() -> Result<()> {
         .for_each(|desc| println!("{}", desc));
 
     println!("--- Analyzing Highway ---");
-    mask[0].iter().for_each(|x| {
-        println!("Highway: {}", analyze_road_mask(x, 1024, 1024, "Highway"));
+    // Filter highway masks: prioritize closest to user (highest average y)
+    let best_highway_mask = mask[0].iter().max_by_key(|mask| {
+        let center_line = extract_center_line(mask, 1024, 1024);
+        center_line.first().map_or(0, |p| p.y) // Use y of nearest point
     });
+    if let Some(mask) = best_highway_mask {
+        println!(
+            "Highway: {}",
+            analyze_road_mask(mask, 1024, 1024, "Highway")
+        );
+    }
 
     println!("\n--- Analyzing Sidewalk ---");
-    mask[1].iter().for_each(|x| {
-        println!("Sidewalk: {}", analyze_road_mask(x, 1024, 1024, "Sidewalk"));
-    });
+    // Filter sidewalk masks: first find those under user's feet (contains bottom center)
+    let user_x = 1024 / 2;
+    let user_y = 1024 - 1; // Bottom center pixel
+    let mut valid_sidewalks: Vec<_> = mask[1]
+        .iter()
+        .filter(|mask| mask[user_y * 1024 + user_x]) // Check if contains user position
+        .collect();
+
+    // If none under feet, use all masks
+    if valid_sidewalks.is_empty() {
+        valid_sidewalks = mask[1].iter().collect();
+    }
+
+    // Select sidewalk with the largest area (most true bits)
+    let best_sidewalk_mask = valid_sidewalks.iter().max_by_key(|mask| mask.count_ones());
+
+    if let Some(mask) = best_sidewalk_mask {
+        println!(
+            "Sidewalk: {}",
+            analyze_road_mask(mask, 1024, 1024, "Sidewalk")
+        );
+    }
 
     Ok(())
 }
