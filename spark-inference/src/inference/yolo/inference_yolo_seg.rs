@@ -2,9 +2,9 @@ use crate::engine::entity::box_point::Box;
 use crate::engine::inference_engine::OnnxSession;
 use crate::utils::tensor::{linear_interpolate, sigmoid};
 use crate::{INFERENCE_YOLO, RUNNING_YOLO_DEVICE};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bitvec::prelude::*;
-use cudarc::driver::{DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
+use cudarc::driver::{DevicePtr, DeviceSlice, LaunchConfig, PushKernelArg};
 use log::debug;
 use ndarray::{s, Axis, Ix2, Ix3};
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
@@ -58,16 +58,20 @@ impl YoloSegmentInference for YoloSegmentSession {
             .build()?;
         image.apply_filter(&filter)?;
 
+        let stream = INFERENCE_YOLO.new_stream()?;
         let tensor = {
-            let buffer = INFERENCE_YOLO.htod_sync_copy(image.raw_data()?.as_slice())?;
+            let buffer = stream.memcpy_stod(image.raw_data()?.as_slice())?;
             let cfg = LaunchConfig::for_num_elems((buffer.len() / 3) as u32);
 
             let tensor: TensorRefMut<'_, f32> = unsafe {
-                let mut tensor = INFERENCE_YOLO.alloc::<f32>(buffer.len())?;
+                let image_size = buffer.len();
+                let mut tensor = stream.alloc::<f32>(image_size)?;
 
-                INFERENCE_YOLO
-                    .normalise_pixel_div()
-                    .launch(cfg, (&mut tensor, &buffer, buffer.len()))?;
+                let mut builder = stream.launch_builder(INFERENCE_YOLO.normalise_pixel_div());
+                builder.arg(&mut tensor);
+                builder.arg(&buffer);
+                builder.arg(&image_size);
+                builder.launch(cfg)?;
 
                 let back = TensorRefMut::from_raw(
                     MemoryInfo::new(
@@ -76,7 +80,7 @@ impl YoloSegmentInference for YoloSegmentSession {
                         AllocatorType::Device,
                         MemoryType::Default,
                     )?,
-                    (*tensor.device_ptr() as usize as *mut ()).cast(),
+                    (tensor.device_ptr(&stream).0 as usize as *mut ()).cast(),
                     Shape::new([1, 3, 640, 640]),
                 )?;
 

@@ -4,7 +4,8 @@ use crate::utils::tensor::linear_interpolate;
 use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
 use anyhow::{anyhow, Result};
 use bitvec::prelude::*;
-use cudarc::driver::{CudaSlice, DevicePtr, DeviceSlice, LaunchAsync, LaunchConfig};
+use cudarc::driver::result::graph::launch;
+use cudarc::driver::{CudaSlice, DevicePtr, DeviceSlice, LaunchConfig, PushKernelArg};
 use log::info;
 use ndarray::prelude::*;
 use ort::inputs;
@@ -17,6 +18,7 @@ use ort::value::{DynValue, Tensor, TensorRef, TensorRefMut};
 use parking_lot::{Mutex, RwLock};
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
+use std::alloc::alloc;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::io::Write;
@@ -140,33 +142,38 @@ impl SAMImageInferenceSession {
         image_encoder: &'b mut OnnxSession,
     ) -> Result<SessionOutputs<'a, 'b>> {
         static MEAN: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
-            INFERENCE_SAM
-                .htod_sync_copy(&[0.485, 0.456, 0.406])
-                .unwrap()
+            let stream = INFERENCE_SAM.new_stream().unwrap();
+            stream.memcpy_stod(&[0.485, 0.456, 0.406]).unwrap()
         });
         static STD: LazyLock<CudaSlice<f32>> = LazyLock::new(|| {
-            INFERENCE_SAM
-                .htod_sync_copy(&[0.229, 0.224, 0.225])
-                .unwrap()
+            let stream = INFERENCE_SAM.new_stream().unwrap();
+            stream.memcpy_stod(&[0.229, 0.224, 0.225]).unwrap()
         });
-
-        let buffer = INFERENCE_SAM.htod_sync_copy(image.as_slice())?;
+        let buffer = {
+            let stream = INFERENCE_SAM.new_stream()?;
+            stream.memcpy_stod(image.as_slice())?
+        };
         let cfg = LaunchConfig::for_num_elems((image.len() / 3) as u32);
 
-        let tensor = unsafe {
-            let mut tensor = INFERENCE_SAM.alloc::<f32>(image.len())?;
+        let (stream, tensor) = unsafe {
+            let image_size = image.len();
+            let stream = INFERENCE_SAM.new_stream()?;
+            let mut tensor = stream.alloc::<f32>(image_size)?;
 
-            INFERENCE_SAM.normalise_pixel_mean().launch(
-                cfg,
-                (&mut tensor, &buffer, MEAN.deref(), STD.deref(), image.len()),
-            )?;
+            let mut builder = stream.launch_builder(INFERENCE_SAM.normalise_pixel_mean());
+            builder.arg(&mut tensor);
+            builder.arg(&buffer);
+            builder.arg(MEAN.deref());
+            builder.arg(STD.deref());
+            builder.arg(&image_size);
+            builder.launch(cfg)?;
 
-            tensor
+            (stream, tensor)
         };
 
         let session_outputs = match image_encoder.executor {
             ExecutionProvider::CPU => {
-                let tensor = INFERENCE_SAM.dtoh_sync_copy(&tensor)?;
+                let tensor = stream.memcpy_dtov(&tensor)?;
                 let tensor = Array4::from_shape_vec((1, 3, 1024, 1024), tensor)?;
                 image_encoder.run(inputs![Tensor::from_array(tensor)?])?
             }
@@ -178,7 +185,7 @@ impl SAMImageInferenceSession {
                         AllocatorType::Device,
                         MemoryType::Default,
                     )?,
-                    (*tensor.device_ptr() as usize as *mut ()).cast(),
+                    (tensor.device_ptr(&stream).0 as usize as *mut ()).cast(),
                     Shape::new([1, 3, 1024, 1024]),
                 )?;
 

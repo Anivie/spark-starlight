@@ -1,5 +1,6 @@
 macro_rules! new_cuda {
     (
+        $module: ident,
         $(
             $name: ident => $source_code: literal,
         )*
@@ -7,50 +8,43 @@ macro_rules! new_cuda {
         use std::ops::Deref;
         use std::sync::Arc;
         use anyhow::{anyhow, Result};
-        use cudarc::driver::{CudaDevice, CudaFunction};
+        use cudarc::driver::{CudaContext, CudaFunction, CudaModule};
         use cudarc::nvrtc::compile_ptx;
 
-        pub(crate) struct Cuda {
-            device: Arc<CudaDevice>,
+        pub(crate) struct $module {
+            context: Arc<CudaContext>,
+            module: Arc<CudaModule>,
 
             $(
                 $name: CudaFunction,
             )*
         }
 
-        impl Deref for Cuda {
-            type Target = Arc<CudaDevice>;
+        impl Deref for $module {
+            type Target = Arc<CudaContext>;
 
             fn deref(&self) -> &Self::Target {
-                &self.device
+                &self.context
             }
         }
 
-        impl Cuda {
+        impl $module {
             pub fn new(device_number: usize) -> Result<Self> {
-                let device = CudaDevice::new(device_number)?;
-
-                $(
-                    device.load_ptx(
-                        compile_ptx($source_code)?,
-                        concat!(file!(), ":", stringify!($name)),
-                        &[stringify!($name)],
-                    )?;
-                )*
+                let context = CudaContext::new(device_number)?;
+                let module = context.load_module(compile_ptx(concat!($($source_code, )*))?)?;
 
                 Ok(Self {
                     $(
-                        $name: device
-                            .get_func(concat!(file!(), ":", stringify!($name)), stringify!($name))
-                            .ok_or(anyhow!("Could not get function: {}.", stringify!($name)))?,
+                        $name: module.load_function(stringify!($name))?,
                     )*
-                    device,
+                    context,
+                    module,
                 })
             }
 
             $(
-                pub fn $name(&self) -> CudaFunction {
-                    self.$name.clone()
+                pub fn $name(&self) -> &CudaFunction {
+                    &self.$name
                 }
             )*
         }
