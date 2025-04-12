@@ -48,8 +48,8 @@ fn main() -> anyhow::Result<()> {
         .into_iter()
         .filter(|result| result.score[1] >= 0.4)
         .collect::<Vec<_>>();
-    let result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
-    let result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
+    let mut result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
+    let mut result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
 
     let mask = {
         let result_highway = result_highway
@@ -88,6 +88,20 @@ fn main() -> anyhow::Result<()> {
             vec![result_highway, result_sidewalk],
         )?
     };
+
+    // Rescale the yolo results to 1024x1024
+    for yolo in result_highway.iter_mut() {
+        yolo.x = yolo.x / image_width as f32 * 1024.0;
+        yolo.y = yolo.y / image_height as f32 * 1024.0;
+        yolo.width = yolo.width / image_width as f32 * 1024.0;
+        yolo.height = yolo.height / image_height as f32 * 1024.0;
+    }
+    for yolo in result_sidewalk.iter_mut() {
+        yolo.x = yolo.x / image_width as f32 * 1024.0;
+        yolo.y = yolo.y / image_height as f32 * 1024.0;
+        yolo.width = yolo.width / image_width as f32 * 1024.0;
+        yolo.height = yolo.height / image_height as f32 * 1024.0;
+    }
 
     println!("--- Analyzing Highway ---");
     // Filter highway masks: prioritize closest to user (highest average y)
