@@ -1,4 +1,4 @@
-use crate::detect::DISTANCE_PERSPECTIVE_POWER;
+use crate::detect::constants::DISTANCE_PERSPECTIVE_POWER;
 use log::error;
 use std::fmt::{Display, Formatter};
 

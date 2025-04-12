@@ -1,11 +1,11 @@
-use crate::detect::property::direction::DirectionCategory;
-use crate::detect::property::obstacle::ObstacleInfo;
-use crate::detect::property::road_shape::RoadShape;
-use crate::detect::{
+use crate::detect::constants::{
     MIN_CENTERLINE_POINTS_FOR_SHAPE, MIN_MASK_WIDTH_FOR_CENTER, NUM_VERTICAL_SAMPLES,
     OBSTACLE_GAP_ROWS_THRESHOLD, OBSTACLE_WIDTH_CHANGE_FACTOR, ROAD_CENTER_X_THRESHOLD,
     ROAD_START_Y_THRESHOLD, STRAIGHT_ROAD_X_DRIFT_THRESHOLD,
 };
+use crate::detect::property::direction::DirectionCategory;
+use crate::detect::property::obstacle::ObstacleInfo;
+use crate::detect::property::road_shape::RoadShape;
 use bitvec::prelude::BitVec;
 use log::error;
 use std::ops::{Deref, DerefMut};
@@ -19,6 +19,7 @@ pub struct CenterLinePoint {
     pub width: u32,
 }
 
+#[derive(Debug, Clone)]
 pub struct CenterLines(Vec<CenterLinePoint>);
 impl Deref for CenterLines {
     type Target = Vec<CenterLinePoint>;

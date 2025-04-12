@@ -1,21 +1,22 @@
+use crate::detect::property::center_line::CenterLines;
+use crate::detect::property::direction::DirectionCategory;
 use crate::detect::property::obstacle::ObstacleInfo;
 use crate::detect::property::road_shape::RoadShape;
-use std::fmt::{Display, Formatter};
+use spark_inference::inference::yolo::inference_yolo_detect::YoloDetectResult;
+use std::fmt::Display;
 
 #[derive(Debug, Clone)]
-pub struct RoadAnalysisResult {
-    pub starts_at_feet: bool,
+pub struct RoadAnalysisData<'a> {
+    // Renamed to avoid confusion with the final *output* struct if needed later
+    pub image_width: u32,
+    pub image_height: u32,
+    pub detect_results: &'a [YoloDetectResult], // Renamed for clarity
+
     pub shape: RoadShape,
     pub obstacles: Vec<ObstacleInfo>,
-    pub description: String,
-}
+    pub center_lines: CenterLines,
 
-impl Display for RoadAnalysisResult {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Starts at feet: {}, Shape: {:?}, Obstacles: {:?}, Description: {}",
-            self.starts_at_feet, self.shape, self.obstacles, self.description
-        )
-    }
+    // These are essential intermediate results derived from center_lines
+    pub starts_at_feet: bool,
+    pub start_direction: Option<DirectionCategory>, // Direction if not starting ideally
 }

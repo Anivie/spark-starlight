@@ -1,7 +1,6 @@
 #![feature(let_chains)]
 #![cfg_attr(debug_assertions, allow(warnings))]
 
-use crate::detect::anchor::describe_anchor_points;
 use crate::detect::mask::{analyze_road_mask, get_best_highway};
 use log::info;
 use spark_inference::disable_ffmpeg_logging;
@@ -52,12 +51,6 @@ fn main() -> anyhow::Result<()> {
     let result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
     let result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
 
-    let highway = describe_anchor_points(&result_highway, image_width, image_height, "Highway");
-    let sidewalk = describe_anchor_points(&result_sidewalk, image_width, image_height, "Sidewalk");
-
-    info!("yolo highway result: {:?}", highway);
-    info!("yolo sidewalk result: {:?}", sidewalk);
-
     let mask = {
         let result_highway = result_highway
             .iter()
@@ -96,22 +89,12 @@ fn main() -> anyhow::Result<()> {
         )?
     };
 
-    println!("--- Sidewalk Detections ---");
-    describe_anchor_points(&result_sidewalk, image_width, image_height, "Sidewalk")
-        .iter()
-        .for_each(|desc| println!("{}", desc));
-
-    println!("\n--- Highway Detections ---");
-    describe_anchor_points(&result_highway, image_width, image_height, "Highway")
-        .iter()
-        .for_each(|desc| println!("{}", desc));
-
     println!("--- Analyzing Highway ---");
     // Filter highway masks: prioritize closest to user (highest average y)
     if let Some(mask) = get_best_highway(&mask[0]) {
         println!(
             "Highway: {}",
-            analyze_road_mask(mask, 1024, 1024, "Highway")
+            analyze_road_mask(mask, result_highway.as_slice(), 1024, 1024, "Highway")
         );
     }
 
@@ -135,7 +118,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(mask) = best_sidewalk_mask {
         println!(
             "Sidewalk: {}",
-            analyze_road_mask(mask, 1024, 1024, "Sidewalk")
+            analyze_road_mask(mask, result_sidewalk.as_slice(), 1024, 1024, "Sidewalk")
         );
     }
 
