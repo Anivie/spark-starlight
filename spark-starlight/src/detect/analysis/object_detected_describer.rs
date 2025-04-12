@@ -7,10 +7,15 @@ use crate::detect::property::direction::DirectionCategory;
 use crate::detect::property::distance::DistanceCategory;
 use std::fmt::Write;
 
+#[derive(Debug, Copy, Clone)]
 pub struct DetectedObjectDescriber;
 
 impl Describer for DetectedObjectDescriber {
-    fn describe(&self, data: &RoadAnalysisData, _object_type_name: &str) -> Option<String> {
+    async fn describe(
+        &self,
+        data: &RoadAnalysisData<'_>,
+        _object_type_name: &str,
+    ) -> Option<String> {
         if data.detect_results.is_empty() {
             // Only add "No specific objects detected" if the centerline also failed.
             // If centerline exists, the lack of objects is implicitly covered.

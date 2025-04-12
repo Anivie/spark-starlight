@@ -1,41 +1,24 @@
-use crate::detect::analysis::object_detected_describer::DetectedObjectDescriber;
-use crate::detect::analysis::obstacle_describer::ObstacleDescriber;
-use crate::detect::analysis::path_ending_describer::PathEndingDescriber;
-use crate::detect::analysis::road_shape_describer::RoadShapeDescriber;
-use crate::detect::analysis::road_start_describer::RoadStartDescriber;
-use crate::detect::analysis::user_position_describer::UserPositionDescriber;
-use crate::detect::analysis::Describer;
+use crate::detect::analysis::{Describer, DescriberDispatcher};
 use crate::detect::property::analyse_result::RoadAnalysisData;
 
 pub struct CompositeDescriber {
-    describers: Vec<Box<dyn Describer>>,
+    describers: Vec<DescriberDispatcher>,
 }
 
 impl CompositeDescriber {
     pub fn new() -> Self {
-        // Define the order in which descriptions should be generated
-        let describers: Vec<Box<dyn Describer>> = vec![
-            Box::new(RoadStartDescriber),
-            Box::new(RoadShapeDescriber),
-            Box::new(ObstacleDescriber),
-            Box::new(DetectedObjectDescriber),
-            Box::new(UserPositionDescriber), // Sidewalk specific warnings
-            Box::new(PathEndingDescriber),   // Sidewalk specific warnings
-        ];
-        CompositeDescriber { describers }
+        Self {
+            describers: DescriberDispatcher::all(),
+        }
     }
 
     /// Generates the full description by combining outputs from individual describers.
-    pub fn describe(&self, data: &RoadAnalysisData, object_type_name: &str) -> String {
+    pub async fn describe(&self, data: &RoadAnalysisData<'_>, object_type_name: &str) -> String {
         let mut parts: Vec<String> = Vec::new();
 
-        for describer in &self.describers {
-            if let Some(part) = describer.describe(data, object_type_name) {
-                if !part.trim().is_empty() {
-                    // Avoid adding empty strings
-                    parts.push(part.trim().to_string());
-                }
-            }
+        let back = self.describers.describe(data, object_type_name).await;
+        if let Some(desc) = back {
+            parts.push(desc);
         }
 
         if parts.is_empty() {
@@ -83,10 +66,14 @@ impl CompositeDescriber {
 // Optional: Implement the Describer trait for CompositeDescriber itself
 // if you want to treat the composition as a single Describer unit elsewhere.
 impl Describer for CompositeDescriber {
-    fn describe(&self, data: &RoadAnalysisData, object_type_name: &str) -> Option<String> {
+    async fn describe(
+        &self,
+        data: &RoadAnalysisData<'_>,
+        object_type_name: &str,
+    ) -> Option<String> {
         // The composite always aims to produce *some* description, so wrap in Some()
         // unless it's truly empty after joining.
-        let desc = self.describe(data, object_type_name);
+        let desc = self.describe(data, object_type_name).await;
         if desc.is_empty() || desc == "." {
             // Check for empty or just a period
             None

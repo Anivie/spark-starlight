@@ -12,6 +12,9 @@ pub struct Image {
     pub(super) encoder: Option<AVCodecContext>,
 }
 
+unsafe impl Send for Image {}
+unsafe impl Sync for Image {}
+
 impl Clone for Image {
     fn clone(&self) -> Self {
         Self {

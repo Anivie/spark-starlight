@@ -3,10 +3,15 @@ use crate::detect::property::analyse_result::RoadAnalysisData;
 use crate::detect::property::distance::DistanceCategory;
 use std::fmt::Write;
 
+#[derive(Debug, Copy, Clone)]
 pub struct RoadStartDescriber;
 
 impl Describer for RoadStartDescriber {
-    fn describe(&self, data: &RoadAnalysisData, object_type_name: &str) -> Option<String> {
+    async fn describe(
+        &self,
+        data: &RoadAnalysisData<'_>,
+        object_type_name: &str,
+    ) -> Option<String> {
         let mut description = String::new();
 
         if data.center_lines.is_empty() {

@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![allow(dead_code)]
 #![cfg_attr(debug_assertions, allow(warnings))]
 
 use hashbrown::HashMap;

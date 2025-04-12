@@ -3,10 +3,15 @@ use crate::detect::property::analyse_result::RoadAnalysisData;
 use crate::detect::property::distance::DistanceCategory;
 use std::fmt::Write;
 
+#[derive(Debug, Copy, Clone)]
 pub struct ObstacleDescriber;
 
 impl Describer for ObstacleDescriber {
-    fn describe(&self, data: &RoadAnalysisData, _object_type_name: &str) -> Option<String> {
+    async fn describe(
+        &self,
+        data: &RoadAnalysisData<'_>,
+        _object_type_name: &str,
+    ) -> Option<String> {
         // Only describe centerline-derived obstacles if a centerline exists.
         if data.center_lines.is_empty() || data.obstacles.is_empty() {
             // If no obstacles, we can potentially add a "clear path" message,

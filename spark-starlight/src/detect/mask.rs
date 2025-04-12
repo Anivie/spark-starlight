@@ -6,7 +6,7 @@ use bitvec::prelude::BitVec;
 use log::{error, info};
 use spark_inference::inference::yolo::inference_yolo_detect::YoloDetectResult;
 
-pub fn analyze_road_mask(
+pub async fn analyze_road_mask(
     mask: &BitVec,
     detections: &[YoloDetectResult],
     image_width: u32,
@@ -19,7 +19,7 @@ pub fn analyze_road_mask(
         Some(ref data) => {
             // Use the CompositeDescriber to generate the final text
             let composite_describer = CompositeDescriber::new();
-            composite_describer.describe(data, object_type_name) // Call the composite describe method
+            composite_describer.describe(data, object_type_name).await // Call the composite describe method
         }
         None => {
             // Core analysis failed, provide a generic failure message

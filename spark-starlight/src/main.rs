@@ -2,17 +2,20 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
 
 use crate::detect::mask::{analyze_road_mask, get_best_highway};
+use bitvec::prelude::BitVec;
 use log::info;
 use spark_inference::disable_ffmpeg_logging;
 use spark_inference::inference::sam::image_inference::{
     SAMImageInferenceSession, SamImageInference,
 };
 use spark_inference::inference::yolo::inference_yolo_detect::{
-    YoloDetectInference, YoloDetectSession,
+    YoloDetectInference, YoloDetectResult, YoloDetectSession,
 };
 use spark_inference::inference::yolo::NMSImplement;
 use spark_inference::utils::graph::SamPrompt;
 use spark_media::Image;
+use std::sync::Arc;
+use tokio::task::{spawn_blocking, JoinHandle};
 
 mod debug;
 mod detect;
@@ -24,19 +27,22 @@ fn log_init() {
     tracing_subscriber::fmt::init();
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     log_init();
     disable_ffmpeg_logging();
 
-    let yolo = YoloDetectSession::new("./data/model")?;
-    let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
+    let yolo = Arc::new(YoloDetectSession::new("./data/model")?);
+    let sam2 = Arc::new(SAMImageInferenceSession::new("./data/model/other5")?);
 
     let path = "./data/image/rt.jpeg";
     let image = Image::open_file(path)?;
     let sam_image = image.clone();
     let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
 
-    let results = yolo.inference_yolo(image.clone(), 0.25)?;
+    let results: JoinHandle<anyhow::Result<Vec<YoloDetectResult>>> =
+        spawn_blocking(move || Ok(yolo.inference_yolo(image.clone(), 0.25)?));
+    let results = results.await??;
     info!("detect results: {:?}", results.len());
 
     let result_highway = results
@@ -82,11 +88,16 @@ fn main() -> anyhow::Result<()> {
             })
             .collect::<Vec<_>>();
 
-        sam2.inference_frame(
-            sam_image,
-            Some((1024, 1024)),
-            vec![result_highway, result_sidewalk],
-        )?
+        let sam2 = sam2.clone();
+        let handle: JoinHandle<anyhow::Result<Vec<Vec<BitVec>>>> = spawn_blocking(move || {
+            Ok(sam2.inference_frame(
+                sam_image,
+                Some((1024, 1024)),
+                vec![result_highway, result_sidewalk],
+            )?)
+        });
+
+        handle.await??
     };
 
     // Rescale the yolo results to 1024x1024
@@ -108,7 +119,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(mask) = get_best_highway(&mask[0]) {
         println!(
             "Highway: {}",
-            analyze_road_mask(mask, result_highway.as_slice(), 1024, 1024, "Highway")
+            analyze_road_mask(mask, result_highway.as_slice(), 1024, 1024, "Highway").await
         );
     }
 
@@ -132,7 +143,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(mask) = best_sidewalk_mask {
         println!(
             "Sidewalk: {}",
-            analyze_road_mask(mask, result_sidewalk.as_slice(), 1024, 1024, "Sidewalk")
+            analyze_road_mask(mask, result_sidewalk.as_slice(), 1024, 1024, "Sidewalk").await
         );
     }
 

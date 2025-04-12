@@ -8,10 +8,15 @@ use crate::detect::property::distance::DistanceCategory;
 use log::debug;
 use std::fmt::Write;
 
+#[derive(Debug, Copy, Clone)]
 pub struct UserPositionDescriber;
 
 impl Describer for UserPositionDescriber {
-    fn describe(&self, data: &RoadAnalysisData, object_type_name: &str) -> Option<String> {
+    async fn describe(
+        &self,
+        data: &RoadAnalysisData<'_>,
+        object_type_name: &str,
+    ) -> Option<String> {
         // This logic is primarily for sidewalks and requires a centerline.
         // Only run if the object is explicitly a "Sidewalk".
         if object_type_name != "Sidewalk" || data.center_lines.is_empty() {

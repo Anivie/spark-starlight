@@ -6,10 +6,15 @@ use crate::detect::property::analyse_result::RoadAnalysisData;
 use crate::detect::property::distance::DistanceCategory;
 use std::fmt::Write;
 
+#[derive(Debug, Copy, Clone)]
 pub struct PathEndingDescriber;
 
 impl Describer for PathEndingDescriber {
-    fn describe(&self, data: &RoadAnalysisData, object_type_name: &str) -> Option<String> {
+    async fn describe(
+        &self,
+        data: &RoadAnalysisData<'_>,
+        object_type_name: &str,
+    ) -> Option<String> {
         // This warning is primarily for sidewalks that start at the user's feet.
         if object_type_name != "Sidewalk" || !data.starts_at_feet || data.center_lines.is_empty() {
             return None;
