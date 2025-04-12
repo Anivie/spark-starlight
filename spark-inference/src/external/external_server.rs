@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Write;
 use std::ops::Deref;
 use zenoh::bytes::ZBytes;
 use zenoh::Session;

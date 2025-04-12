@@ -7,7 +7,7 @@ macro_rules! new_cuda {
     ) => {
         use std::ops::Deref;
         use std::sync::Arc;
-        use anyhow::{anyhow, Result};
+        use anyhow::Result;
         use cudarc::driver::{CudaContext, CudaFunction, CudaModule};
         use cudarc::nvrtc::compile_ptx;
 

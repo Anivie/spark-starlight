@@ -10,7 +10,7 @@ use std::fmt::Write;
 pub struct DetectedObjectDescriber;
 
 impl Describer for DetectedObjectDescriber {
-    fn describe(&self, data: &RoadAnalysisData, object_type_name: &str) -> Option<String> {
+    fn describe(&self, data: &RoadAnalysisData, _object_type_name: &str) -> Option<String> {
         if data.detect_results.is_empty() {
             // Only add "No specific objects detected" if the centerline also failed.
             // If centerline exists, the lack of objects is implicitly covered.

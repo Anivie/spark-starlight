@@ -1,8 +1,7 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use crate::{INFERENCE_YOLO, RUNNING_YOLO_DEVICE};
-use anyhow::{anyhow, Result};
-use cudarc::driver::result::graph::launch;
-use cudarc::driver::{DevicePtr, DeviceSlice, LaunchConfig, PushKernelArg};
+use anyhow::Result;
+use cudarc::driver::{DevicePtr, LaunchConfig, PushKernelArg};
 use log::{debug, info};
 use ndarray::{s, Axis, Ix2};
 use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};

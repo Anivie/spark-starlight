@@ -28,3 +28,9 @@ pub(crate) const MIN_POINTS_FOR_CONTINUATION: usize = 5; // Needs tuning
                                                          // Threshold 3: How close a "gap" obstacle needs to be (e.g., in the bottom half of the image)
 pub(crate) const CLOSE_GAP_Y_THRESHOLD_FACTOR: f32 = 0.50;
 // --- End Thresholds ---
+
+/// How close to the edge (as a fraction of sidewalk half-width) triggers a warning.
+/// e.g., 0.7 means if the user is beyond 70% of the way from the center to the edge.
+pub(crate) const EDGE_PROXIMITY_THRESHOLD_FACTOR: f32 = 0.7;
+/// Minimum sidewalk width (as fraction of image width) to apply edge warnings. Avoids warnings on very narrow paths.
+pub(crate) const MIN_SIDEWALK_WIDTH_FACTOR_FOR_EDGE_WARNING: f32 = 0.05;

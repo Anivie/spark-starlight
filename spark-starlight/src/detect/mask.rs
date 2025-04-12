@@ -1,12 +1,9 @@
 use crate::detect::analysis::compose::CompositeDescriber;
-use crate::detect::analysis::Describer;
 use crate::detect::property::analyse_result::RoadAnalysisData;
 use crate::detect::property::center_line::CenterLines;
-use crate::detect::property::direction::DirectionCategory;
-use crate::detect::property::distance::DistanceCategory;
 use crate::detect::property::road_shape::RoadShape;
 use bitvec::prelude::BitVec;
-use log::{debug, error, info};
+use log::{error, info};
 use spark_inference::inference::yolo::inference_yolo_detect::YoloDetectResult;
 
 pub fn analyze_road_mask(

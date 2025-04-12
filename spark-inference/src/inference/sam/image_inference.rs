@@ -1,31 +1,23 @@
 use crate::engine::inference_engine::{ExecutionProvider, OnnxSession};
 use crate::utils::graph::SamPrompt;
-use crate::utils::tensor::linear_interpolate;
 use crate::{INFERENCE_SAM, RUNNING_SAM_DEVICE};
 use anyhow::{anyhow, Result};
-use bitvec::prelude::*;
-use cudarc::driver::result::graph::launch;
-use cudarc::driver::{CudaSlice, DevicePtr, DeviceSlice, LaunchConfig, PushKernelArg};
+use bitvec::prelude::BitVec;
+use cudarc::driver::{CudaSlice, DevicePtr, LaunchConfig, PushKernelArg};
 use log::info;
-use ndarray::prelude::*;
+use ndarray::{array, s, Array4};
 use ort::inputs;
 use ort::io_binding::IoBinding;
 use ort::memory::{AllocationDevice, Allocator, AllocatorType, MemoryInfo, MemoryType};
-use ort::session::run_options::OutputSelector;
-use ort::session::{HasSelectedOutputs, RunOptions, Session, SessionInputValue, SessionOutputs};
+use ort::session::SessionOutputs;
 use ort::tensor::Shape;
-use ort::value::{DynValue, Tensor, TensorRef, TensorRefMut};
-use parking_lot::{Mutex, RwLock};
+use ort::value::{Tensor, TensorRefMut};
+use parking_lot::Mutex;
 use spark_media::filter::filter::AVFilter;
 use spark_media::Image;
-use std::alloc::alloc;
-use std::collections::HashMap;
-use std::ffi::c_void;
-use std::io::Write;
-use std::mem::forget;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 pub trait SamImageInference {
     fn inference_frame(

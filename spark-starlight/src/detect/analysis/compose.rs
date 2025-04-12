@@ -63,7 +63,6 @@ impl CompositeDescriber {
 
         // Combine the parts into a single sentence-like structure.
         // Capitalize the first part, add periods, and join with ". ".
-        let mut final_description = String::new();
         if let Some(first_part) = parts.first_mut() {
             let mut c = first_part.chars();
             if let Some(f) = c.next() {
@@ -71,7 +70,7 @@ impl CompositeDescriber {
             }
         }
 
-        final_description = parts.join(". ");
+        let mut final_description = parts.join(". ");
         // Ensure the final string ends with a period.
         if !final_description.ends_with('.') {
             final_description.push('.');

@@ -3,7 +3,6 @@ use crate::detect::property::direction::DirectionCategory;
 use crate::detect::property::obstacle::ObstacleInfo;
 use crate::detect::property::road_shape::RoadShape;
 use spark_inference::inference::yolo::inference_yolo_detect::YoloDetectResult;
-use std::fmt::Display;
 
 #[derive(Debug, Clone)]
 pub struct RoadAnalysisData<'a> {
