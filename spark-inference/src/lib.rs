@@ -4,7 +4,6 @@
 
 pub(crate) mod cuda;
 pub mod engine;
-pub mod external;
 pub mod inference;
 pub mod utils;
 
