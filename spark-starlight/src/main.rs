@@ -30,11 +30,6 @@ fn log_init() {
     tracing_subscriber::fmt::init();
 }
 
-struct ClientResponse {
-    handle: JoinHandle<anyhow::Result<Vec<u8>>>,
-    session_id: String,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     log_init();
@@ -44,35 +39,8 @@ async fn main() -> anyhow::Result<()> {
     let sam2 = Arc::new(SAMImageInferenceSession::new("./data/model/other5")?);
     let tts = Arc::new(TTSEngine::new_en()?);
 
-    let session = zenoh::open(zenoh::Config::default()).await.unwrap();
+    let session = Arc::new(zenoh::open(zenoh::Config::default()).await.unwrap());
     let subscriber = session.declare_subscriber("spark/server").await.unwrap();
-
-    let (sender, receiver) = kanal::unbounded_async::<ClientResponse>();
-    spawn(async move {
-        while let Ok(handle) = receiver.recv().await {
-            match handle.handle.await {
-                Ok(Ok(pack)) => {
-                    let builder = session
-                        .put(
-                            format!("spark/client/{}", handle.session_id),
-                            "returnImageInfo",
-                        )
-                        .attachment(pack);
-                    if let Err(e) = builder.await {
-                        warn!("Error sending response: {}", e);
-                    } else {
-                        info!("Response sent to client: {}", handle.session_id);
-                    };
-                }
-                Ok(Err(e)) => {
-                    warn!("Error in task: {}", e);
-                }
-                Err(e) => {
-                    warn!("Task panicked: {}", e);
-                }
-            }
-        }
-    });
 
     while let Ok(sample) = subscriber.recv_async().await {
         let payload = sample.payload().to_bytes();
@@ -82,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
 
         match tag {
             b"uploadImage" => {
-                let Some(attachment) = sample.attachment() else {
+                if sample.attachment().is_none() {
                     warn!("No attachment found");
                     continue;
                 };
@@ -91,12 +59,22 @@ async fn main() -> anyhow::Result<()> {
                 let yolo = yolo.clone();
                 let sam2 = sam2.clone();
                 let tts = tts.clone();
-                let image = Image::from_bytes(attachment.to_bytes())?;
-                let handle: JoinHandle<anyhow::Result<Vec<u8>>> = spawn(async move {
+                let session = session.clone();
+                let _: JoinHandle<anyhow::Result<()>> = spawn(async move {
+                    let x = sample.attachment().unwrap();
+                    let image = Image::from_bytes(x.to_bytes())?;
+
                     let result = analyse_image(image, yolo, sam2, tts).await?;
-                    Ok(result)
+                    let builder = session
+                        .put(format!("spark/client/{}", session_id), "returnImageInfo")
+                        .attachment(result);
+                    if let Err(e) = builder.await {
+                        warn!("Error sending response: {}", e);
+                    } else {
+                        info!("Response sent to client: {}", session_id);
+                    };
+                    Ok(())
                 });
-                sender.send(ClientResponse { handle, session_id }).await?;
             }
             _ => {
                 info!(
