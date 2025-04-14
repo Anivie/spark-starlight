@@ -9,12 +9,14 @@ use spark_inference::inference::sam::image_inference::{
     SAMImageInferenceSession, SamImageInference,
 };
 use spark_inference::inference::tts;
+use spark_inference::inference::tts::tts_engine::{TTSEngine, TTS};
 use spark_inference::inference::yolo::inference_yolo_detect::{
     YoloDetectInference, YoloDetectResult, YoloDetectSession,
 };
 use spark_inference::inference::yolo::NMSImplement;
 use spark_inference::utils::graph::SamPrompt;
 use spark_media::Image;
+use std::io::Write;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::task::{spawn_blocking, JoinHandle};
