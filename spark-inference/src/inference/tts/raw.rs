@@ -1,5 +1,6 @@
 use std::ffi::c_void;
 
+#[repr(C)]
 pub struct SherpaOnnxGeneratedAudio {
     pub samples: *const f32, // in the range [-1, 1]
     pub n: i32,              // number of samples
