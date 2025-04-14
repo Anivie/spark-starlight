@@ -1,13 +1,16 @@
+use crate::av_io_context::AVIOContext;
 use crate::avformat::{AVFormatContext, AVFormatContextRaw};
 use crate::avpacket::AVPacket;
 use crate::ffi::{
     av_read_frame, avformat_alloc_context, avformat_open_input, AVDictionary, AVInputFormat,
+    AVFMT_FLAG_CUSTOM_IO,
 };
 use crate::ffi_enum::AVPixelFormat;
 use anyhow::{anyhow, Result};
-use std::ffi::CString;
+use std::ffi::{c_int, CString};
 use std::path::Path;
 use std::ptr::{null, null_mut};
+use std::str::FromStr;
 
 pub trait OpenFileToAVFormatContext {
     fn open_file(path: impl AsRef<Path>, format: Option<&AVInputFormat>) -> Result<Self>
@@ -20,6 +23,10 @@ pub trait OpenFileToAVFormatContext {
     ) -> Result<(Self, &'a AVDictionary)>
     where
         Self: Sized;
+    fn alloc() -> Result<Self>
+    where
+        Self: Sized;
+    fn set_io_context(&mut self, io_context: &AVIOContext) -> Result<()>;
 }
 
 impl OpenFileToAVFormatContext for AVFormatContext {
@@ -78,6 +85,35 @@ impl OpenFileToAVFormatContext for AVFormatContext {
             },
             dictionary,
         ))
+    }
+
+    fn alloc() -> Result<Self> {
+        let av_format_context = unsafe { avformat_alloc_context() };
+
+        if av_format_context.is_null() {
+            return Err(anyhow!("Failed to allocate AVFormatContext"));
+        }
+
+        Ok(AVFormatContext {
+            inner: av_format_context,
+            opened: false,
+            scanned_stream: Default::default(),
+        })
+    }
+
+    fn set_io_context(&mut self, io_context: &AVIOContext) -> Result<()> {
+        self.pb = io_context.inner;
+        self.flags = AVFMT_FLAG_CUSTOM_IO as c_int;
+        ffmpeg! {
+            avformat_open_input(
+                &mut self.inner as *mut *mut AVFormatContextRaw,
+                CString::from_str("memory_input")?.as_ptr(),
+                null(),
+                null_mut(),
+            ) or "Failed to open file"
+        }
+
+        Ok(())
     }
 }
 

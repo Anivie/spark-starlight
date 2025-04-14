@@ -4,6 +4,7 @@
 pub mod util;
 mod ffi;
 
+pub mod av_io_context;
 pub mod av_mem_alloc;
 mod av_rational;
 pub mod avcodec;
