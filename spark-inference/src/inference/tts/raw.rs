@@ -23,13 +23,22 @@ extern "C" {
      * @return 成功则返回 TTS 引擎句柄 (void*)，失败则返回 NULL。
      *         使用完毕后，必须调用 destroy_tts_engine() 释放资源。
      */
-    pub(super) fn init_tts_engine(
+    pub(super) fn init_tts_engine_zh(
         acoustic_model: *const i8,
         vocoder: *const i8,
         lexicon: *const i8,
         tokens: *const i8,
         dict_dir: *const i8,
         rule_fsts: *const i8,
+        device: *const i8,
+        num_threads: i32,
+        debug: i32,
+    ) -> *const c_void;
+    pub(super) fn init_tts_engine_en(
+        acoustic_model: *const i8,
+        vocoder: *const i8,
+        tokens: *const i8,
+        data_dir: *const i8,
         device: *const i8,
         num_threads: i32,
         debug: i32,

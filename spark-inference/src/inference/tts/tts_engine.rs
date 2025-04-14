@@ -1,12 +1,16 @@
 use crate::inference::tts::raw::{
-    destroy_tts_engine, free_tts_audio, generate_tts_audio, init_tts_engine,
+    destroy_tts_engine, free_tts_audio, generate_tts_audio, init_tts_engine_en, init_tts_engine_zh,
 };
+use log::debug;
 use std::ffi::{c_void, CString};
 use std::io::{BufWriter, Cursor};
 use std::str::FromStr;
 
 pub trait TTS {
-    fn new() -> anyhow::Result<Self>
+    fn new_zh() -> anyhow::Result<Self>
+    where
+        Self: Sized;
+    fn new_en() -> anyhow::Result<Self>
     where
         Self: Sized;
     fn generate(&self, source: &str) -> anyhow::Result<Vec<u8>>;
@@ -27,51 +31,55 @@ impl Drop for TTSEngine {
     }
 }
 
-impl TTSEngine {
-    fn new_inner(
-        acoustic_model: &str,
-        vocoder: &str,
-        lexicon: &str,
-        tokens: &str,
-        dict_dir: &str,
-        rule_fsts: &str,
-        device: &str,
-        num_threads: i32,
-        debug: i32,
-    ) -> anyhow::Result<Self> {
+impl TTS for TTSEngine {
+    fn new_zh() -> anyhow::Result<Self> {
         let engine = unsafe {
-            init_tts_engine(
-                CString::from_str(acoustic_model)?.as_ptr() as *const i8,
-                CString::from_str(vocoder)?.as_ptr() as *const i8,
-                CString::from_str(lexicon)?.as_ptr() as *const i8,
-                CString::from_str(tokens)?.as_ptr() as *const i8,
-                CString::from_str(dict_dir)?.as_ptr() as *const i8,
-                CString::from_str(rule_fsts)?.as_ptr() as *const i8,
-                CString::from_str(device)?.as_ptr() as *const i8,
-                num_threads,
-                debug,
+            init_tts_engine_zh(
+                CString::from_str("./data/model/tts/matcha-zh/model-steps-3.onnx")?.as_ptr() as *const i8,
+                CString::from_str("./data/model/tts/matcha-zh/hifigan_v3.onnx")?.as_ptr() as *const i8,
+                CString::from_str("./data/model/tts/matcha-zh/lexicon.txt")?.as_ptr() as *const i8,
+                CString::from_str("./data/model/tts/matcha-zh/tokens.txt")?.as_ptr() as *const i8,
+                CString::from_str("./data/model/tts/matcha-zh/dict")?.as_ptr() as *const i8,
+                CString::from_str("./data/model/tts/matcha-zh/date.fst,./data/model/tts/matcha-zh/number.fst,./data/model/tts/matcha-zh/phone.fst")?.as_ptr() as *const i8,
+                CString::from_str("cpu")?.as_ptr() as *const i8,
+                16,
+                0,
             )
         };
-        Ok(TTSEngine { engine })
+        if engine.is_null() {
+            return Err(anyhow::anyhow!("Failed to initialize TTS engine"));
+        }
+        debug!("TTS engine initialized successfully");
+        Ok(Self { engine })
     }
-}
 
-impl TTS for TTSEngine {
-    fn new() -> anyhow::Result<Self> {
-        Ok(Self::new_inner(
-            "./data/model/tts/matcha-zh/model-steps-3.onnx",
-            "./data/model/tts/matcha-zh/hifigan_v3.onnx",
-            "./data/model/tts/matcha-zh/lexicon.txt",
-            "./data/model/tts/matcha-zh/tokens.txt",
-            "./data/model/tts/matcha-zh/dict",
-            "./data/model/tts/matcha-zh/date.fst,./data/model/tts/matcha-zh/number.fst,./data/model/tts/matcha-zh/phone.fst",
-            "cuda",
-            16,
-            0,
-        )?)
+    fn new_en() -> anyhow::Result<Self> {
+        let engine = unsafe {
+            init_tts_engine_en(
+                CString::from_str("./data/model/tts/matcha-en/model-steps-3.onnx")?.as_ptr()
+                    as *const i8,
+                CString::from_str("./data/model/tts/matcha-en/vocos-22khz-univ.onnx")?.as_ptr()
+                    as *const i8,
+                CString::from_str("./data/model/tts/matcha-en/tokens.txt")?.as_ptr() as *const i8,
+                CString::from_str("./data/model/tts/matcha-en/espeak-ng-data")?.as_ptr()
+                    as *const i8,
+                CString::from_str("cpu")?.as_ptr() as *const i8,
+                16,
+                0,
+            )
+        };
+        if engine.is_null() {
+            return Err(anyhow::anyhow!("Failed to initialize TTS engine"));
+        }
+        debug!("TTS engine initialized successfully");
+        Ok(Self { engine })
     }
 
     fn generate(&self, source: &str) -> anyhow::Result<Vec<u8>> {
+        if source.is_empty() {
+            return Err(anyhow::anyhow!("Empty source string"));
+        }
+
         let (back, sample_rate) = unsafe {
             let back = generate_tts_audio(
                 self.engine,

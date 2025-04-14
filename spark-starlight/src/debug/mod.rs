@@ -1,4 +1,6 @@
-#[test]
+use std::io::Read;
+
+// #[test]
 pub fn debug() {
     use spark_inference::inference::sam::image_inference::{
         SAMImageInferenceSession, SamImageInference,
@@ -16,7 +18,13 @@ pub fn debug() {
         let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
 
         let path = "./data/image/rt.jpeg";
-        let mut image = Image::open_file(path)?;
+        // let mut image = Image::open_file(path)?;
+        let mut file = std::fs::File::open(path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        // let image = Image::open_file(path)?;
+        let mut image = Image::from_bytes(buffer.as_slice())?;
+
         let sam_image = image.clone();
 
         let results = yolo.inference_yolo(image.clone(), 0.25)?;
@@ -106,7 +114,7 @@ pub fn debug() {
             image.layering_mask(&x, RGB(0, 0, 75))?;
         }
 
-        image.save_with_format("./data/out/a_out.png")?;
+        image.save_with_format("./data/out/e_out.png")?;
         Ok(())
     };
 
