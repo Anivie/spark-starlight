@@ -61,8 +61,11 @@ async fn main() -> anyhow::Result<()> {
                 let tts = tts.clone();
                 let session = session.clone();
                 let _: JoinHandle<anyhow::Result<()>> = spawn(async move {
-                    let x = sample.attachment().unwrap();
-                    let image = Image::from_bytes(x.to_bytes())?;
+                    let image = spawn_blocking(move || {
+                        let attachment = sample.attachment().unwrap();
+                        Image::from_bytes(attachment.to_bytes())
+                    })
+                    .await??;
 
                     let result = analyse_image(image, yolo, sam2, tts).await?;
                     let builder = session
