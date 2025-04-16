@@ -2,6 +2,7 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
 
 use crate::detect::mask::{analyze_road_mask, get_best_highway};
+use actix_web::{web, App, Error, HttpResponse, HttpServer};
 use bitvec::prelude::BitVec;
 use bytes::Bytes;
 use log::{error, info, warn};
@@ -16,14 +17,11 @@ use spark_inference::inference::yolo::inference_yolo_detect::{
 use spark_inference::inference::yolo::NMSImplement;
 use spark_inference::utils::graph::SamPrompt;
 use spark_media::Image;
-use std::clone;
 use std::ops::Deref;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::task::{spawn_blocking, JoinHandle};
 use tokio::{count, join, spawn};
-use zenoh::sample::Sample;
-use zenoh::{Config, Session};
 
 mod debug;
 mod detect;
@@ -41,7 +39,33 @@ struct InferenceEngine {
     tts: TTSEngine,
 }
 
-#[tokio::main]
+async fn upload_image_handler(
+    engine: web::Data<&'static InferenceEngine>,
+    body: Bytes,
+) -> Result<HttpResponse, Error> {
+    info!("Received POST request on /uploadImage");
+
+    let image = match spawn_blocking(move || Image::from_bytes(body.deref())).await {
+        Ok(Ok(image)) => image,
+        err => {
+            warn!("Error processing image: {:?}", err);
+            return Ok(HttpResponse::BadRequest().body("Invalid image data"));
+        }
+    };
+
+    match analyse_image(image, engine.deref()).await {
+        Ok(response_message) => {
+            info!("Processing successful.");
+            Ok(HttpResponse::Ok().body(response_message))
+        }
+        Err(e) => {
+            log::error!("Error processing image: {:?}", e);
+            Ok(HttpResponse::InternalServerError().body(format!("Error processing image: {}", e)))
+        }
+    }
+}
+
+#[actix_web::main]
 async fn main() -> anyhow::Result<()> {
     log_init();
     disable_ffmpeg_logging();
@@ -49,99 +73,19 @@ async fn main() -> anyhow::Result<()> {
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
     let tts = TTSEngine::new_en()?;
-    let engine = InferenceEngine { yolo, sam2, tts };
-    let engine: &'static InferenceEngine = Box::leak(Box::new(engine));
+    let engine: &'static InferenceEngine = Box::leak(Box::new(InferenceEngine { yolo, sam2, tts }));
 
-    let session = {
-        let config = Config::from_json5(
-            r#"
-         {
-             mode: "router",
-             listen: {
-                endpoints: ["tcp/0.0.0.0:7447"],
-             },
-             transport: {
-                link: {
-                    rx: {
-                        buffer_size: 1048576
-                    }
-                }
-             }
-         }
-        "#,
-        )
-        .unwrap();
-        Arc::new(zenoh::open(config).await.unwrap())
-    };
-    let subscriber = session.declare_subscriber("spark/server").await.unwrap();
-
-    while let Ok(sample) = subscriber.recv_async().await {
-        let payload = sample.payload().to_bytes();
-        let tag = payload.split(|&b| b == b':').next().unwrap_or(&payload);
-        let session_id = &payload[tag.len() + 1..];
-        let session_id = String::from_utf8_lossy(session_id).to_string();
-
-        match tag {
-            b"uploadImage" => {
-                handle_upload(engine, session.clone(), sample, session_id);
-            }
-            _ => {
-                info!(
-                    "Received unknown payload: {}",
-                    String::from_utf8_lossy(sample.payload().to_bytes().deref())
-                );
-            }
-        }
-    }
+    HttpServer::new(move || {
+        App::new()
+            .app_data(web::PayloadConfig::new(1024 * 1024 * 1024 * 25))
+            .data(engine)
+            .route("/uploadImage", web::post().to(upload_image_handler))
+    })
+    .bind(("0.0.0.0", 7447))?
+    .run()
+    .await?;
 
     Ok(())
-}
-
-fn handle_upload(
-    engine: &'static InferenceEngine,
-    session: Arc<Session>,
-    sample: Sample,
-    session_id: String,
-) {
-    if sample.attachment().is_none() {
-        warn!("No attachment found");
-        return;
-    };
-    info!("Got uploadImage request from client: {}", session_id);
-
-    let session = session.clone();
-    spawn(async move {
-        let result: anyhow::Result<()> = async {
-            let image = spawn_blocking(move || {
-                let attachment = sample.attachment().unwrap();
-                Image::from_bytes(attachment.to_bytes())
-            })
-            .await??;
-
-            let result = analyse_image(image, engine).await?;
-            let builder = session
-                .put(format!("spark/client/{}", session_id), "returnImageInfo")
-                .attachment(result);
-            if let Err(e) = builder.await {
-                warn!("Error sending response: {}", e);
-            } else {
-                info!("Response sent to client: {}", session_id);
-            };
-            Ok(())
-        }
-        .await;
-
-        if let Err(e) = result {
-            session
-                .put(
-                    format!("spark/client/{}", session_id),
-                    "serverInternalError",
-                )
-                .await
-                .unwrap();
-            error!("Error processing request: {}", e);
-        }
-    });
 }
 
 async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow::Result<Vec<u8>> {
