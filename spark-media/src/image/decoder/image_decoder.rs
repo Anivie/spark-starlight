@@ -1,7 +1,7 @@
 use crate::image::util::image_inner::ImageInner;
 use crate::image::util::image_util::ImageUtil;
 use crate::{Image, CODEC};
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use log::warn;
 use spark_ffmpeg::av_io_context::AVIOContext;
 use spark_ffmpeg::av_mem_alloc::AVMemorySegment;
@@ -10,8 +10,10 @@ use spark_ffmpeg::avformat::avformat_context::OpenFileToAVFormatContext;
 use spark_ffmpeg::avformat::{AVFormatContext, AVMediaType};
 use spark_ffmpeg::avframe::AVFrame;
 use spark_ffmpeg::avpacket::AVPacket;
+use std::fmt::format;
 use std::mem::forget;
 use std::path::Path;
+use std::ptr::null_mut;
 
 impl Image {
     pub fn open_file(path: impl AsRef<Path>) -> Result<Self> {
@@ -61,22 +63,30 @@ impl Image {
 
     pub fn from_bytes<T: AsRef<[u8]>>(value: T) -> Result<Image> {
         let bytes = value.as_ref();
-        let mut format = AVFormatContext::alloc()?;
-        let memory_segment = AVMemorySegment::new(bytes.len())?;
-        let mut io_context = AVIOContext::alloc(
-            memory_segment.inner.cast(),
-            bytes.len(),
-            0,
-            std::ptr::null_mut(),
-            None,
-            None,
-            None,
-        )?;
-        io_context.fill_data(bytes)?;
-        format.set_io_context(&io_context)?;
+        if bytes.is_empty() {
+            return Err(anyhow!("Empty bytes"));
+        }
 
-        forget(memory_segment);
-        forget(io_context);
+        let mut format = {
+            let mut format = AVFormatContext::alloc()?;
+            let memory_segment = AVMemorySegment::new(bytes.len())?;
+            let mut io_context = AVIOContext::alloc(
+                memory_segment.inner.cast(),
+                bytes.len(),
+                0,
+                std::ptr::null_mut(),
+                None,
+                None,
+                None,
+            )?;
+            forget(memory_segment);
+
+            io_context.fill_data(bytes)?;
+            format.set_io_context(&io_context)?;
+            forget(io_context);
+
+            format
+        };
 
         let codec_context = format
             .video_stream()?

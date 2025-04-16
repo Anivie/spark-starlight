@@ -2,8 +2,10 @@
 #![cfg_attr(debug_assertions, allow(warnings))]
 
 use crate::detect::mask::{analyze_road_mask, get_best_highway};
+use actix_web::{web, App, Error, HttpResponse, HttpServer};
 use bitvec::prelude::BitVec;
-use log::{info, warn};
+use bytes::Bytes;
+use log::{error, info, warn};
 use spark_inference::disable_ffmpeg_logging;
 use spark_inference::inference::sam::image_inference::{
     SAMImageInferenceSession, SamImageInference,
@@ -16,9 +18,10 @@ use spark_inference::inference::yolo::NMSImplement;
 use spark_inference::utils::graph::SamPrompt;
 use spark_media::Image;
 use std::ops::Deref;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::task::{spawn_blocking, JoinHandle};
-use tokio::{join, spawn};
+use tokio::{count, join, spawn};
 
 mod debug;
 mod detect;
@@ -30,8 +33,70 @@ fn log_init() {
     tracing_subscriber::fmt::init();
 }
 
-#[tokio::main]
+#[derive(Clone)]
+struct InferenceEngine {
+    yolo: Arc<YoloDetectSession>,
+    sam2: Arc<SAMImageInferenceSession>,
+    tts: Arc<TTSEngine>,
+}
+
+async fn upload_image_handler(
+    engine: web::Data<InferenceEngine>,
+    body: Bytes,
+) -> Result<HttpResponse, Error> {
+    info!("Received POST request on /uploadImage");
+
+    let image = match spawn_blocking(move || Image::from_bytes(body.deref())).await {
+        Ok(Ok(image)) => image,
+        err => {
+            warn!("Error processing image: {:?}", err);
+            return Ok(HttpResponse::BadRequest().body("Invalid image data"));
+        }
+    };
+
+    match analyse_image(image, engine.deref().clone()).await {
+        Ok(response_message) => {
+            info!("Processing successful.");
+            Ok(HttpResponse::Ok().body(response_message))
+        }
+        Err(e) => {
+            log::error!("Error processing image: {:?}", e);
+            Ok(HttpResponse::InternalServerError().body(format!("Error processing image: {}", e)))
+        }
+    }
+}
+
+// Use actix_web::main instead of tokio::main if preferred,
+// otherwise tokio::main is fine as Actix runs on Tokio.
+#[actix_web::main]
 async fn main() -> anyhow::Result<()> {
+    log_init();
+    disable_ffmpeg_logging();
+
+    // Initialize your services (keep using Arc for shared ownership)
+    let yolo = YoloDetectSession::new("./data/model")?;
+    let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
+    let tts = TTSEngine::new_en()?;
+    let engine = InferenceEngine {
+        yolo: Arc::new(yolo),
+        sam2: Arc::new(sam2),
+        tts: Arc::new(tts),
+    };
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(web::PayloadConfig::new(1024 * 1024 * 1024 * 25))
+            .app_data(web::Data::new(engine.clone()))
+            .route("/uploadImage", web::post().to(upload_image_handler))
+    })
+    .bind(("0.0.0.0", 7447))?
+    .run()
+    .await?;
+
+    Ok(())
+}
+
+/*async fn start_zenoh() -> anyhow::Result<()> {
     log_init();
     disable_ffmpeg_logging();
 
@@ -39,7 +104,24 @@ async fn main() -> anyhow::Result<()> {
     let sam2 = Arc::new(SAMImageInferenceSession::new("./data/model/other5")?);
     let tts = Arc::new(TTSEngine::new_en()?);
 
-    let session = Arc::new(zenoh::open(zenoh::Config::default()).await.unwrap());
+    let session = {
+        let config = Config::from_json5(r#"
+         {
+             mode: "router",
+             listen: {
+                endpoints: ["tcp/0.0.0.0:7447"],
+             },
+             transport: {
+                link: {
+                    rx: {
+                        buffer_size: 1048576
+                    }
+                }
+             }
+         }
+        "#).unwrap();
+        Arc::new(zenoh::open(config).await.unwrap())
+    };
     let subscriber = session.declare_subscriber("spark/server").await.unwrap();
 
     while let Ok(sample) = subscriber.recv_async().await {
@@ -50,34 +132,7 @@ async fn main() -> anyhow::Result<()> {
 
         match tag {
             b"uploadImage" => {
-                if sample.attachment().is_none() {
-                    warn!("No attachment found");
-                    continue;
-                };
-                info!("Got uploadImage request from client: {}", session_id);
-
-                let yolo = yolo.clone();
-                let sam2 = sam2.clone();
-                let tts = tts.clone();
-                let session = session.clone();
-                let _: JoinHandle<anyhow::Result<()>> = spawn(async move {
-                    let image = spawn_blocking(move || {
-                        let attachment = sample.attachment().unwrap();
-                        Image::from_bytes(attachment.to_bytes())
-                    })
-                    .await??;
-
-                    let result = analyse_image(image, yolo, sam2, tts).await?;
-                    let builder = session
-                        .put(format!("spark/client/{}", session_id), "returnImageInfo")
-                        .attachment(result);
-                    if let Err(e) = builder.await {
-                        warn!("Error sending response: {}", e);
-                    } else {
-                        info!("Response sent to client: {}", session_id);
-                    };
-                    Ok(())
-                });
+                handle_upload(yolo.clone(), sam2.clone(), tts.clone(), session.clone(), sample, session_id);
             }
             _ => {
                 info!(
@@ -91,21 +146,65 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn analyse_image(
-    image: Image,
-    yolo: Arc<YoloDetectSession>,
-    sam: Arc<SAMImageInferenceSession>,
-    tts: Arc<TTSEngine>,
-) -> anyhow::Result<Vec<u8>> {
+fn handle_upload_zenoh(yolo: Arc<YoloDetectSession>, sam2: Arc<SAMImageInferenceSession>, tts: Arc<TTSEngine>, session: Arc<Session>, sample: Sample, session_id: String) {
+    if sample.attachment().is_none() {
+        warn!("No attachment found");
+        return;
+    };
+    info!("Got uploadImage request from client: {}", session_id);
+
+    let yolo = yolo.clone();
+    let sam2 = sam2.clone();
+    let tts = tts.clone();
+    let session = session.clone();
+    spawn(async move {
+        let result: anyhow::Result<()> = async {
+            let image = spawn_blocking(move || {
+                let attachment = sample.attachment().unwrap();
+                Image::from_bytes(attachment.to_bytes())
+            }).await??;
+
+            let result = analyse_image(image, yolo, sam2, tts).await?;
+            let builder = session
+                .put(format!("spark/client/{}", session_id), "returnImageInfo")
+                .attachment(result);
+            if let Err(e) = builder.await {
+                warn!("Error sending response: {}", e);
+            } else {
+                info!("Response sent to client: {}", session_id);
+            };
+            Ok(())
+        }.await;
+
+        if let Err(e) = result {
+            session
+                .put(format!("spark/client/{}", session_id), "serverInternalError")
+                .await.unwrap();
+            error!("Error processing request: {}", e);
+        }
+    });
+}*/
+
+async fn analyse_image(image: Image, engine: Arc<InferenceEngine>) -> anyhow::Result<Vec<u8>> {
     let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
+    let (yolo, sam, tts) = (engine.yolo.clone(), engine.sam2.clone(), engine.tts.clone());
 
     let results = {
         let image = image.clone();
-        let results: JoinHandle<anyhow::Result<Vec<YoloDetectResult>>> =
-            spawn_blocking(move || Ok(yolo.inference_yolo(image, 0.25)?));
-        results.await??
+        spawn_blocking(move || {
+            Ok::<Vec<YoloDetectResult>, anyhow::Error>(yolo.inference_yolo(image, 0.25)?)
+        })
+        .await??
     };
     info!("detect results: {:?}", results.len());
+    if results.is_empty() {
+        let result: anyhow::Result<Vec<u8>> = spawn_blocking(move || {
+            Ok(tts.generate("Warning: Nothing could be found in current scene")?)
+        })
+        .await?;
+
+        return Ok(result?);
+    }
 
     let result_highway = results
         .clone()
@@ -212,7 +311,14 @@ async fn analyse_image(
         back.push_str(&sidewalk);
     }
 
-    let result: anyhow::Result<Vec<u8>> = spawn_blocking(move || Ok(tts.generate(&back)?)).await?;
+    let result: anyhow::Result<Vec<u8>> = spawn_blocking(move || {
+        Ok(tts.generate(if back.is_empty() {
+            "Warning: No road detected"
+        } else {
+            &back
+        })?)
+    })
+    .await?;
 
     Ok(result?)
 }

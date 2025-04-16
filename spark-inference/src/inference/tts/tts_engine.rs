@@ -1,7 +1,7 @@
 use crate::inference::tts::raw::{
     destroy_tts_engine, free_tts_audio, generate_tts_audio, init_tts_engine_en, init_tts_engine_zh,
 };
-use log::debug;
+use log::info;
 use std::ffi::{c_void, CString};
 use std::io::{BufWriter, Cursor};
 use std::str::FromStr;
@@ -49,7 +49,7 @@ impl TTS for TTSEngine {
         if engine.is_null() {
             return Err(anyhow::anyhow!("Failed to initialize TTS engine"));
         }
-        debug!("TTS engine initialized successfully");
+        info!("TTS engine initialized successfully");
         Ok(Self { engine })
     }
 
@@ -71,7 +71,7 @@ impl TTS for TTSEngine {
         if engine.is_null() {
             return Err(anyhow::anyhow!("Failed to initialize TTS engine"));
         }
-        debug!("TTS engine initialized successfully");
+        info!("TTS engine initialized successfully");
         Ok(Self { engine })
     }
 
