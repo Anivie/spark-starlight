@@ -33,15 +33,14 @@ fn log_init() {
     tracing_subscriber::fmt::init();
 }
 
-#[derive(Clone)]
 struct InferenceEngine {
-    yolo: Arc<YoloDetectSession>,
-    sam2: Arc<SAMImageInferenceSession>,
-    tts: Arc<TTSEngine>,
+    yolo: YoloDetectSession,
+    sam2: SAMImageInferenceSession,
+    tts: TTSEngine,
 }
 
 async fn upload_image_handler(
-    engine: web::Data<InferenceEngine>,
+    engine: web::Data<&'static InferenceEngine>,
     body: Bytes,
 ) -> Result<HttpResponse, Error> {
     info!("Received POST request on /uploadImage");
@@ -54,7 +53,7 @@ async fn upload_image_handler(
         }
     };
 
-    match analyse_image(image, engine.deref().clone()).await {
+    match analyse_image(image, engine.deref()).await {
         Ok(response_message) => {
             info!("Processing successful.");
             Ok(HttpResponse::Ok().body(response_message))
@@ -66,27 +65,20 @@ async fn upload_image_handler(
     }
 }
 
-// Use actix_web::main instead of tokio::main if preferred,
-// otherwise tokio::main is fine as Actix runs on Tokio.
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
     log_init();
     disable_ffmpeg_logging();
 
-    // Initialize your services (keep using Arc for shared ownership)
     let yolo = YoloDetectSession::new("./data/model")?;
     let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
     let tts = TTSEngine::new_en()?;
-    let engine = InferenceEngine {
-        yolo: Arc::new(yolo),
-        sam2: Arc::new(sam2),
-        tts: Arc::new(tts),
-    };
+    let engine: &'static InferenceEngine = Box::leak(Box::new(InferenceEngine { yolo, sam2, tts }));
 
     HttpServer::new(move || {
         App::new()
             .app_data(web::PayloadConfig::new(1024 * 1024 * 1024 * 25))
-            .app_data(web::Data::new(engine.clone()))
+            .app_data(engine)
             .route("/uploadImage", web::post().to(upload_image_handler))
     })
     .bind(("0.0.0.0", 7447))?
@@ -185,9 +177,9 @@ fn handle_upload_zenoh(yolo: Arc<YoloDetectSession>, sam2: Arc<SAMImageInference
     });
 }*/
 
-async fn analyse_image(image: Image, engine: Arc<InferenceEngine>) -> anyhow::Result<Vec<u8>> {
+async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow::Result<Vec<u8>> {
     let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
-    let (yolo, sam, tts) = (engine.yolo.clone(), engine.sam2.clone(), engine.tts.clone());
+    let (yolo, sam, tts) = (&engine.yolo, &engine.sam2, &engine.tts);
 
     let results = {
         let image = image.clone();
