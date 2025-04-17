@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::PayloadConfig::new(1024 * 1024 * 1024 * 25))
-            .data(engine)
+            .app_data(web::Data::new(engine))
             .route("/uploadImage", web::post().to(upload_image_handler))
     })
     .bind(("0.0.0.0", 7447))?
