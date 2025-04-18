@@ -53,15 +53,6 @@ async fn upload_image_handler(
         }
     };
 
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    image
-        .clone()
-        .save_with_format(format!("./data/image/upload/input_{}.jpg", timestamp))
-        .unwrap();
-
     match analyse_image(image, engine.deref()).await {
         Ok(response_message) => {
             info!("Processing successful.");
