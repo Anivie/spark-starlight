@@ -53,6 +53,15 @@ async fn upload_image_handler(
         }
     };
 
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    image
+        .clone()
+        .save_with_format(format!("./data/image/upload/input_{}.jpg", timestamp))
+        .unwrap();
+
     match analyse_image(image, engine.deref()).await {
         Ok(response_message) => {
             info!("Processing successful.");
@@ -92,6 +101,7 @@ async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow
     let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
     let (yolo, sam, tts) = (&engine.yolo, &engine.sam2, &engine.tts);
 
+    info!("Start Yolo detection");
     let results = {
         let image = image.clone();
         spawn_blocking(move || {
@@ -99,6 +109,7 @@ async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow
         })
         .await??
     };
+
     info!("detect results: {:?}", results.len());
     if results.is_empty() {
         let result: anyhow::Result<Vec<u8>> = spawn_blocking(move || {
@@ -120,6 +131,11 @@ async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow
         .collect::<Vec<_>>();
     let mut result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
     let mut result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
+    info!(
+        "Non max suppression results: {} {}",
+        result_highway.len(),
+        result_sidewalk.len()
+    );
 
     let mask = {
         let result_highway = result_highway
@@ -152,6 +168,7 @@ async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow
             })
             .collect::<Vec<_>>();
 
+        info!("Start SAM inference");
         let handle: JoinHandle<anyhow::Result<Vec<Vec<BitVec>>>> = spawn_blocking(move || {
             Ok(sam.inference_frame(
                 image,
@@ -162,6 +179,7 @@ async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow
 
         handle.await??
     };
+    info!("SAM inference results: {} {}", mask[0].len(), mask[1].len());
 
     // Rescale the yolo results to 1024x1024
     for yolo in result_highway.iter_mut() {
@@ -195,30 +213,39 @@ async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow
     // Select sidewalk with the largest area (most true bits)
     let best_sidewalk_mask = valid_sidewalks.iter().max_by_key(|mask| mask.count_ones());
 
-    let mut back = String::new();
+    info!("Start analyzing masks");
+    let mut back = Vec::new();
     // Filter highway masks: prioritize closest to user (highest average y)
-    if let (Some(highway), Some(sidewalk)) = (best_highway, best_sidewalk_mask) {
-        let (highway, sidewalk) = join!(
-            analyze_road_mask(highway, result_highway.as_slice(), 1024, 1024, "Highway"),
-            analyze_road_mask(sidewalk, result_sidewalk.as_slice(), 1024, 1024, "Sidewalk"),
-        );
-        back.push_str(&highway);
-        back.push_str(&sidewalk);
-    } else if let Some(highway) = best_highway {
-        let highway =
-            analyze_road_mask(highway, result_highway.as_slice(), 1024, 1024, "Highway").await;
-        back.push_str(&highway);
-    } else if let Some(sidewalk) = best_sidewalk_mask {
-        let sidewalk =
-            analyze_road_mask(sidewalk, result_sidewalk.as_slice(), 1024, 1024, "Sidewalk").await;
-        back.push_str(&sidewalk);
+    let highway_future = best_highway
+        .map(|hw| analyze_road_mask(hw, result_highway.as_slice(), 1024, 1024, "Highway"));
+
+    let sidewalk_future = best_sidewalk_mask
+        .map(|sw| analyze_road_mask(sw, result_sidewalk.as_slice(), 1024, 1024, "Sidewalk"));
+
+    match (highway_future, sidewalk_future) {
+        (Some(hw), Some(sw)) => {
+            let (highway, sidewalk) = join!(hw, sw);
+            back.push(highway);
+            back.push(sidewalk);
+        }
+        (Some(hw), None) => {
+            let highway = hw.await;
+            back.push(highway);
+        }
+        (None, Some(sw)) => {
+            let sidewalk = sw.await;
+            back.push(sidewalk);
+        }
+        (None, None) => {}
     }
 
+    let string = back.join(", ");
+    info!("Get natural language: {}", string);
     let result: anyhow::Result<Vec<u8>> = spawn_blocking(move || {
         Ok(tts.generate(if back.is_empty() {
             "Warning: No road detected"
         } else {
-            &back
+            string.as_str()
         })?)
     })
     .await?;
