@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use bitvec::prelude::BitVec;
 use cudarc::driver::{CudaSlice, DevicePtr, LaunchConfig, PushKernelArg};
 use log::info;
-use ndarray::{array, s, Array4};
+use ndarray::{array, s, Array1, Array2, Array4, Axis};
 use ort::inputs;
 use ort::io_binding::IoBinding;
 use ort::memory::{AllocationDevice, Allocator, AllocatorType, MemoryInfo, MemoryType};
@@ -217,8 +217,8 @@ impl SAMImageInferenceSession {
         let trans_prompt = match &prompt {
             SamPrompt::Box(boxes) => {
                 array![
-                    1024f32 * (boxes.x / image_size.0 as f32),
-                    1024f32 * (boxes.y / image_size.1 as f32),
+                    1024f32 * ((boxes.x - boxes.width / 2_f32) / image_size.0 as f32),
+                    1024f32 * ((boxes.y - boxes.height / 2_f32) / image_size.1 as f32),
                     1024f32 * ((boxes.x + boxes.width / 2_f32) / image_size.0 as f32),
                     1024f32 * ((boxes.y + boxes.height / 2_f32) / image_size.1 as f32),
                 ]
@@ -229,12 +229,20 @@ impl SAMImageInferenceSession {
                     1024f32 * (point.y / image_size.1 as f32),
                 ]
             }
+            SamPrompt::Points(points) => {
+                let mut base = Array1::zeros(points.len() * 2);
+                for (i, point) in points.iter().enumerate() {
+                    base[i * 2] = 1024f32 * (point.x / image_size.0 as f32);
+                    base[i * 2 + 1] = 1024f32 * (point.y / image_size.1 as f32);
+                }
+                base
+            }
             SamPrompt::Both(point, boxes) => {
                 array![
                     1024f32 * (point.x / image_size.0 as f32),
                     1024f32 * (point.y / image_size.1 as f32),
-                    1024f32 * (boxes.x / image_size.0 as f32),
-                    1024f32 * (boxes.y / image_size.1 as f32),
+                    1024f32 * ((boxes.x - boxes.width / 2_f32) / image_size.0 as f32),
+                    1024f32 * ((boxes.y - boxes.height / 2_f32) / image_size.1 as f32),
                     1024f32 * ((boxes.x + boxes.width / 2_f32) / image_size.0 as f32),
                     1024f32 * ((boxes.y + boxes.height / 2_f32) / image_size.1 as f32),
                 ]
@@ -243,14 +251,20 @@ impl SAMImageInferenceSession {
 
         let point_labels = match prompt {
             SamPrompt::Point(_) => array![[1_f32]],
-            SamPrompt::Box(_) => array![[1_f32, 1_f32]],
-            SamPrompt::Both(_, _) => array![[1_f32, 1_f32, 1_f32]],
+            SamPrompt::Points(point) => {
+                let mut point_labels = Array2::zeros((1, point.len()));
+                for (i, _) in point.iter().enumerate() {
+                    point_labels[[0, i]] = 1_f32;
+                }
+                point_labels
+            }
+            SamPrompt::Box(_) => array![[2_f32, 3_f32]],
+            SamPrompt::Both(_, _) => array![[1_f32, 2_f32, 3_f32]],
         };
 
-        let prompt_out = match prompt {
-            SamPrompt::Point(_) => trans_prompt.into_shape_with_order((1, 1, 2))?,
-            SamPrompt::Box(_) => trans_prompt.into_shape_with_order((1, 2, 2))?,
-            SamPrompt::Both(_, _) => trans_prompt.into_shape_with_order((1, 3, 2))?,
+        let prompt_out = {
+            let size = trans_prompt.shape()[0] / 2;
+            trans_prompt.into_shape_with_order((1, size, 2))?
         };
 
         decoder_binding.bind_input("point_coords", &Tensor::from_array(prompt_out)?)?;
