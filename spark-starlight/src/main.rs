@@ -15,7 +15,7 @@ use spark_inference::inference::yolo::inference_yolo_detect::{
     YoloDetectInference, YoloDetectResult, YoloDetectSession,
 };
 use spark_inference::inference::yolo::NMSImplement;
-use spark_inference::utils::graph::SamPrompt;
+use spark_inference::utils::graph::{Point, SamPrompt};
 use spark_media::Image;
 use std::ops::Deref;
 use std::sync::atomic::AtomicU64;
@@ -132,30 +132,24 @@ async fn analyse_image(image: Image, engine: &'static InferenceEngine) -> anyhow
         let result_highway = result_highway
             .iter()
             .map(|yolo| {
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
-                )
+                SamPrompt::Box(spark_inference::utils::graph::Box {
+                    x: yolo.x,
+                    y: yolo.y,
+                    width: yolo.width,
+                    height: yolo.height,
+                })
             })
             .collect::<Vec<_>>();
 
         let result_sidewalk = result_sidewalk
             .iter()
             .map(|yolo| {
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
-                )
+                SamPrompt::Box(spark_inference::utils::graph::Box {
+                    x: yolo.x,
+                    y: yolo.y,
+                    width: yolo.width,
+                    height: yolo.height,
+                })
             })
             .collect::<Vec<_>>();
 

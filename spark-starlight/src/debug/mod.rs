@@ -1,3 +1,5 @@
+use spark_inference::utils::graph::Point;
+
 #[test]
 pub fn debug_image() {
     use spark_inference::inference::sam::image_inference::{
@@ -13,10 +15,10 @@ pub fn debug_image() {
     use spark_media::{Image, RGB};
     use std::io::Read;
     let tst: fn() -> anyhow::Result<()> = || {
-        let yolo = YoloDetectSession::new("./data/model")?;
-        let sam2 = SAMImageInferenceSession::new("./data/model/other5")?;
+        let yolo = YoloDetectSession::new("../data/model")?;
+        let sam2 = SAMImageInferenceSession::new("../data/model/other5")?;
 
-        let path = "./data/image/rt.jpeg";
+        let path = "../data/image/rd.jpg";
         // let mut image = Image::open_file(path)?;
         let mut file = std::fs::File::open(path)?;
         let mut buffer = Vec::new();
@@ -32,7 +34,7 @@ pub fn debug_image() {
         let result_highway = results
             .clone()
             .into_iter()
-            .filter(|result| result.score[0] >= 0.8)
+            .filter(|result| result.score[0] >= 0.7)
             .collect::<Vec<_>>();
         let result_sidewalk = results
             .into_iter()
@@ -73,30 +75,24 @@ pub fn debug_image() {
         let result_highway = result_highway
             .iter()
             .map(|yolo| {
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
-                )
+                SamPrompt::Box(spark_inference::utils::graph::Box {
+                    x: yolo.x,
+                    y: yolo.y,
+                    width: yolo.width,
+                    height: yolo.height,
+                })
             })
             .collect::<Vec<_>>();
 
         let result_sidewalk = result_sidewalk
             .iter()
             .map(|yolo| {
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
-                )
+                SamPrompt::Box(spark_inference::utils::graph::Box {
+                    x: yolo.x,
+                    y: yolo.y,
+                    width: yolo.width,
+                    height: yolo.height,
+                })
             })
             .collect::<Vec<_>>();
 
@@ -113,13 +109,14 @@ pub fn debug_image() {
             image.layering_mask(&x, RGB(0, 0, 75))?;
         }
 
-        image.save_with_format("./data/out/e_out.png")?;
+        image.save_with_format("../data/out/l_out.png")?;
         Ok(())
     };
 
     tst().unwrap();
 }
-#[test]
+
+#[tokio::test]
 async fn debug_tts() -> anyhow::Result<()> {
     use crate::detect::mask::{analyze_road_mask, get_best_highway};
     use crate::log_init;
@@ -141,10 +138,10 @@ async fn debug_tts() -> anyhow::Result<()> {
     log_init();
     disable_ffmpeg_logging();
 
-    let yolo = Arc::new(YoloDetectSession::new("./data/model")?);
-    let sam2 = Arc::new(SAMImageInferenceSession::new("./data/model/other5")?);
+    let yolo = Arc::new(YoloDetectSession::new("../data/model")?);
+    let sam2 = Arc::new(SAMImageInferenceSession::new("../data/model/other5")?);
 
-    let path = "./data/image/rt.jpeg";
+    let path = "../data/image/rt.jpeg";
     let image = Image::open_file(path)?;
     let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
 
@@ -172,14 +169,17 @@ async fn debug_tts() -> anyhow::Result<()> {
         let result_highway = result_highway
             .iter()
             .map(|yolo| {
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
+                SamPrompt::Both(
+                    Point {
+                        x: yolo.x,
+                        y: yolo.y,
+                    },
+                    spark_inference::utils::graph::Box {
+                        x: yolo.x - yolo.width / 2.0,
+                        y: yolo.y - yolo.height / 2.0,
+                        width: yolo.width,
+                        height: yolo.height,
+                    },
                 )
             })
             .collect::<Vec<_>>();
@@ -187,14 +187,17 @@ async fn debug_tts() -> anyhow::Result<()> {
         let result_sidewalk = result_sidewalk
             .iter()
             .map(|yolo| {
-                SamPrompt::both(
-                    (
-                        yolo.x - yolo.width / 2.0,
-                        yolo.y - yolo.height / 2.0,
-                        yolo.x + yolo.width / 2.0,
-                        yolo.y + yolo.height / 2.0,
-                    ),
-                    (yolo.x, yolo.y),
+                SamPrompt::Both(
+                    Point {
+                        x: yolo.x,
+                        y: yolo.y,
+                    },
+                    spark_inference::utils::graph::Box {
+                        x: yolo.x - yolo.width / 2.0,
+                        y: yolo.y - yolo.height / 2.0,
+                        width: yolo.x + yolo.width / 2.0,
+                        height: yolo.y + yolo.height / 2.0,
+                    },
                 )
             })
             .collect::<Vec<_>>();
