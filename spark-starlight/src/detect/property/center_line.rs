@@ -35,13 +35,9 @@ impl DerefMut for CenterLines {
 }
 
 impl CenterLines {
-    fn new() -> Self {
-        CenterLines(Vec::new())
-    }
-
     /// Extracts the center line and width profile of the road mask.
     pub fn extract_center_line(mask: &BitVec, image_width: u32, image_height: u32) -> Self {
-        let mut center_line = Self::new();
+        let mut center_line = CenterLines(Vec::new());
         if image_width == 0 || image_height == 0 || mask.is_empty() {
             return center_line;
         }

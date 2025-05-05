@@ -16,10 +16,10 @@ pub async fn analyze_road_mask(
     let analysis_data_option = perform_core_analysis(mask, detections, image_width, image_height);
 
     let description = match analysis_data_option {
-        Some(ref data) => {
+        Some(data) => {
             // Use the CompositeDescriber to generate the final text
             let composite_describer = CompositeDescriber::new();
-            composite_describer.describe(data, object_type_name).await // Call the composite describe method
+            composite_describer.describe(&data, object_type_name).await // Call the composite describe method
         }
         None => {
             // Core analysis failed, provide a generic failure message

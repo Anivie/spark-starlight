@@ -1,4 +1,5 @@
-use spark_inference::utils::graph::Point;
+use std::future::Future;
+use std::process::Output;
 
 #[test]
 pub fn debug_image() {
@@ -14,11 +15,11 @@ pub fn debug_image() {
     use spark_media::filter::filter::AVFilter;
     use spark_media::{Image, RGB};
     use std::io::Read;
-    let tst: fn() -> anyhow::Result<()> = || {
-        let yolo = YoloDetectSession::new("../data/model")?;
-        let sam2 = SAMImageInferenceSession::new("../data/model/other5")?;
 
-        let path = "../data/image/rd.jpg";
+    let yolo = YoloDetectSession::new("../data/model").unwrap();
+    let sam2 = SAMImageInferenceSession::new("../data/model/other5").unwrap();
+    let tst: Box<dyn Fn(&str, &str) -> anyhow::Result<()>> = Box::new(|path, out| {
+        // let path = "../data/image/i1.jpg";
         // let mut image = Image::open_file(path)?;
         let mut file = std::fs::File::open(path)?;
         let mut buffer = Vec::new();
@@ -109,11 +110,25 @@ pub fn debug_image() {
             image.layering_mask(&x, RGB(0, 0, 75))?;
         }
 
-        image.save_with_format("../data/out/l_out.png")?;
+        image.save_with_format(out)?;
         Ok(())
-    };
+    });
 
-    tst().unwrap();
+    // tst().unwrap();
+    //遍历指定路径下的所有文件，挨个调用 tst 函数
+    let path = "../data/image/test";
+    let out_path = "../data/out/test";
+    let paths = std::fs::read_dir(path).unwrap();
+    for entry in paths {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_file() {
+            let file_name = path.file_name().unwrap().to_str().unwrap();
+            let out = format!("{}/{}", out_path, file_name);
+            println!("Processing: {}", path.display());
+            tst(path.to_str().unwrap(), out.as_str()).unwrap();
+        }
+    }
 }
 
 #[tokio::test]
@@ -130,135 +145,158 @@ async fn debug_tts() -> anyhow::Result<()> {
         YoloDetectInference, YoloDetectResult, YoloDetectSession,
     };
     use spark_inference::inference::yolo::NMSImplement;
+    use spark_inference::utils::graph::Point;
     use spark_inference::utils::graph::SamPrompt;
     use spark_media::Image;
     use std::io::Read;
     use std::sync::Arc;
     use tokio::task::{spawn_blocking, JoinHandle};
-    log_init();
+    // log_init();
     disable_ffmpeg_logging();
 
     let yolo = Arc::new(YoloDetectSession::new("../data/model")?);
     let sam2 = Arc::new(SAMImageInferenceSession::new("../data/model/other5")?);
 
-    let path = "../data/image/rt.jpeg";
-    let image = Image::open_file(path)?;
-    let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
+    async fn call(
+        yolo: Arc<YoloDetectSession>,
+        sam2: Arc<SAMImageInferenceSession>,
+        path: &str,
+    ) -> anyhow::Result<()> {
+        // let path = "../data/image/rt.jpeg";
+        let image = Image::open_file(path)?;
+        let (image_width, image_height) = (image.get_width() as u32, image.get_height() as u32);
 
-    let results = {
-        let image = image.clone();
-        let results: JoinHandle<anyhow::Result<Vec<YoloDetectResult>>> =
-            spawn_blocking(move || Ok(yolo.inference_yolo(image, 0.25)?));
-        results.await??
-    };
-    info!("detect results: {:?}", results.len());
+        let results = {
+            let image = image.clone();
+            let results: JoinHandle<anyhow::Result<Vec<YoloDetectResult>>> =
+                spawn_blocking(move || Ok(yolo.inference_yolo(image, 0.25)?));
+            results.await??
+        };
+        info!("detect results: {:?}", results.len());
 
-    let result_highway = results
-        .clone()
-        .into_iter()
-        .filter(|result| result.score[0] >= 0.8)
-        .collect::<Vec<_>>();
-    let result_sidewalk = results
-        .into_iter()
-        .filter(|result| result.score[1] >= 0.4)
-        .collect::<Vec<_>>();
-    let mut result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
-    let mut result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
-
-    let mask = {
-        let result_highway = result_highway
-            .iter()
-            .map(|yolo| {
-                SamPrompt::Both(
-                    Point {
-                        x: yolo.x,
-                        y: yolo.y,
-                    },
-                    spark_inference::utils::graph::Box {
-                        x: yolo.x - yolo.width / 2.0,
-                        y: yolo.y - yolo.height / 2.0,
-                        width: yolo.width,
-                        height: yolo.height,
-                    },
-                )
-            })
+        let result_highway = results
+            .clone()
+            .into_iter()
+            .filter(|result| result.score[0] >= 0.8)
             .collect::<Vec<_>>();
-
-        let result_sidewalk = result_sidewalk
-            .iter()
-            .map(|yolo| {
-                SamPrompt::Both(
-                    Point {
-                        x: yolo.x,
-                        y: yolo.y,
-                    },
-                    spark_inference::utils::graph::Box {
-                        x: yolo.x - yolo.width / 2.0,
-                        y: yolo.y - yolo.height / 2.0,
-                        width: yolo.x + yolo.width / 2.0,
-                        height: yolo.y + yolo.height / 2.0,
-                    },
-                )
-            })
+        let result_sidewalk = results
+            .into_iter()
+            .filter(|result| result.score[1] >= 0.4)
             .collect::<Vec<_>>();
+        let mut result_highway = result_highway.non_maximum_suppression(0.5, 0.35, 0);
+        let mut result_sidewalk = result_sidewalk.non_maximum_suppression(0.5, 0.25, 1);
 
-        let sam2 = sam2.clone();
-        let handle: JoinHandle<anyhow::Result<Vec<Vec<BitVec>>>> = spawn_blocking(move || {
-            Ok(sam2.inference_frame(
-                image,
-                Some((1024, 1024)),
-                vec![result_highway, result_sidewalk],
-            )?)
-        });
+        let mask = {
+            let result_highway = result_highway
+                .iter()
+                .map(|yolo| {
+                    SamPrompt::Both(
+                        Point {
+                            x: yolo.x,
+                            y: yolo.y,
+                        },
+                        spark_inference::utils::graph::Box {
+                            x: yolo.x - yolo.width / 2.0,
+                            y: yolo.y - yolo.height / 2.0,
+                            width: yolo.width,
+                            height: yolo.height,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
 
-        handle.await??
-    };
+            let result_sidewalk = result_sidewalk
+                .iter()
+                .map(|yolo| {
+                    SamPrompt::Both(
+                        Point {
+                            x: yolo.x,
+                            y: yolo.y,
+                        },
+                        spark_inference::utils::graph::Box {
+                            x: yolo.x - yolo.width / 2.0,
+                            y: yolo.y - yolo.height / 2.0,
+                            width: yolo.x + yolo.width / 2.0,
+                            height: yolo.y + yolo.height / 2.0,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
 
-    // Rescale the yolo results to 1024x1024
-    for yolo in result_highway.iter_mut() {
-        yolo.x = yolo.x / image_width as f32 * 1024.0;
-        yolo.y = yolo.y / image_height as f32 * 1024.0;
-        yolo.width = yolo.width / image_width as f32 * 1024.0;
-        yolo.height = yolo.height / image_height as f32 * 1024.0;
+            let sam2 = sam2.clone();
+            let handle: JoinHandle<anyhow::Result<Vec<Vec<BitVec>>>> = spawn_blocking(move || {
+                Ok(sam2.inference_frame(
+                    image,
+                    Some((1024, 1024)),
+                    vec![result_highway, result_sidewalk],
+                )?)
+            });
+
+            handle.await??
+        };
+
+        // Rescale the yolo results to 1024x1024
+        for yolo in result_highway.iter_mut() {
+            yolo.x = yolo.x / image_width as f32 * 1024.0;
+            yolo.y = yolo.y / image_height as f32 * 1024.0;
+            yolo.width = yolo.width / image_width as f32 * 1024.0;
+            yolo.height = yolo.height / image_height as f32 * 1024.0;
+        }
+        for yolo in result_sidewalk.iter_mut() {
+            yolo.x = yolo.x / image_width as f32 * 1024.0;
+            yolo.y = yolo.y / image_height as f32 * 1024.0;
+            yolo.width = yolo.width / image_width as f32 * 1024.0;
+            yolo.height = yolo.height / image_height as f32 * 1024.0;
+        }
+
+        println!("--- Analyzing Highway ---");
+        // Filter highway masks: prioritize closest to user (highest average y)
+        if let Some(mask) = get_best_highway(&mask[0]) {
+            println!(
+                "Highway: {}",
+                analyze_road_mask(mask, result_highway.as_slice(), 1024, 1024, "Highway").await
+            );
+        }
+
+        println!("\n--- Analyzing Sidewalk ---");
+        // Filter sidewalk masks: first find those under user's feet (contains bottom center)
+        let user_x = 1024 / 2;
+        let user_y = 1024 - 1; // Bottom center pixel
+        let mut valid_sidewalks: Vec<_> = mask[1]
+            .iter()
+            .filter(|mask| mask[user_y * 1024 + user_x]) // Check if contains user position
+            .collect();
+
+        // If none under feet, use all masks
+        if valid_sidewalks.is_empty() {
+            valid_sidewalks = mask[1].iter().collect();
+        }
+
+        // Select sidewalk with the largest area (most true bits)
+        let best_sidewalk_mask = valid_sidewalks.iter().max_by_key(|mask| mask.count_ones());
+
+        if let Some(mask) = best_sidewalk_mask {
+            println!(
+                "Sidewalk: {}",
+                analyze_road_mask(mask, result_sidewalk.as_slice(), 1024, 1024, "Sidewalk").await
+            );
+        }
+
+        Ok(())
     }
-    for yolo in result_sidewalk.iter_mut() {
-        yolo.x = yolo.x / image_width as f32 * 1024.0;
-        yolo.y = yolo.y / image_height as f32 * 1024.0;
-        yolo.width = yolo.width / image_width as f32 * 1024.0;
-        yolo.height = yolo.height / image_height as f32 * 1024.0;
-    }
 
-    println!("--- Analyzing Highway ---");
-    // Filter highway masks: prioritize closest to user (highest average y)
-    if let Some(mask) = get_best_highway(&mask[0]) {
-        println!(
-            "Highway: {}",
-            analyze_road_mask(mask, result_highway.as_slice(), 1024, 1024, "Highway").await
-        );
-    }
+    let path = [
+        "../data/image/test/sidwalk1.png",
+        "../data/image/test/sidwalk2.png",
+        "../data/image/test/sidwalk3.png",
+        "../data/image/test/sidwalk4.png",
+        "../data/image/test/sidwalk5.png",
+    ];
 
-    println!("\n--- Analyzing Sidewalk ---");
-    // Filter sidewalk masks: first find those under user's feet (contains bottom center)
-    let user_x = 1024 / 2;
-    let user_y = 1024 - 1; // Bottom center pixel
-    let mut valid_sidewalks: Vec<_> = mask[1]
-        .iter()
-        .filter(|mask| mask[user_y * 1024 + user_x]) // Check if contains user position
-        .collect();
-
-    // If none under feet, use all masks
-    if valid_sidewalks.is_empty() {
-        valid_sidewalks = mask[1].iter().collect();
-    }
-
-    // Select sidewalk with the largest area (most true bits)
-    let best_sidewalk_mask = valid_sidewalks.iter().max_by_key(|mask| mask.count_ones());
-
-    if let Some(mask) = best_sidewalk_mask {
-        println!(
-            "Sidewalk: {}",
-            analyze_road_mask(mask, result_sidewalk.as_slice(), 1024, 1024, "Sidewalk").await
-        );
+    for p in path.iter() {
+        let path = p.to_string();
+        println!("Processing: {}", path);
+        call(yolo.clone(), sam2.clone(), path.as_str()).await?;
     }
 
     Ok(())
