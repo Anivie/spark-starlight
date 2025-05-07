@@ -13,7 +13,7 @@ pub trait TTS {
     fn new_en() -> anyhow::Result<Self>
     where
         Self: Sized;
-    fn generate(&self, source: &str) -> anyhow::Result<Vec<u8>>;
+    fn generate<'a, T: Into<&'a str>>(&self, source: T) -> anyhow::Result<Vec<u8>>;
 }
 
 pub struct TTSEngine {
@@ -75,7 +75,8 @@ impl TTS for TTSEngine {
         Ok(Self { engine })
     }
 
-    fn generate(&self, source: &str) -> anyhow::Result<Vec<u8>> {
+    fn generate<'a, T: Into<&'a str>>(&self, source: T) -> anyhow::Result<Vec<u8>> {
+        let source = source.into();
         if source.is_empty() {
             return Err(anyhow::anyhow!("Empty source string"));
         }
